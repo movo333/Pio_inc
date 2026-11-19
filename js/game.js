@@ -109,21 +109,24 @@ const SFX = (() => {
     } catch(e) { return false; }
   }
 
-  // Pool بسيط كـ fallback
+  // Pool بسيط كـ fallback (يُنشأ عند أول استخدام فقط)
   const POOL = 3;
   const pools = {};
-  Object.entries(MAP).forEach(([k, f]) => {
-    const arr = [];
-    for (let i = 0; i < POOL; i++) {
-      const a = new Audio(BASE + f);
-      a.preload = 'auto';
-      arr.push(a);
+  function getPool(name) {
+    if (!pools[name] && MAP[name]) {
+      const arr = [];
+      for (let i = 0; i < POOL; i++) {
+        const a = new Audio(BASE + MAP[name]);
+        a.preload = 'none';
+        arr.push(a);
+      }
+      pools[name] = { arr, i: 0 };
     }
-    pools[k] = { arr, i: 0 };
-  });
+    return pools[name];
+  }
 
   function playPool(name, vol) {
-    const p = pools[name];
+    const p = getPool(name);
     if (!p) return;
     const a = p.arr[p.i];
     p.i = (p.i + 1) % POOL;
@@ -150,6 +153,7 @@ const SFX = (() => {
     stopAll,
     mute(v)   { muted = v; },
     isMuted() { return muted; },
+    urls() { return Object.values(MAP).map(f => BASE + f); },
     // تحميل كل الأصوات قبل بدء اللعبة (مع مهلة لكل ملف)
     preloadAll() {
       const names = Object.keys(MAP);
@@ -259,34 +263,43 @@ function resolveAssetPath(src) {
 }
 
 // تحميل صورة بشكل موثوق: مهلة لكل ملف + إعادة المحاولة + decode قبل اعتبارها جاهزة
+const _assetLog = new Set();        // روابط الأصول التي تم تحميلها (لحفظها على الجهاز)
+const _MAX_PAR = 8;                 // 8 صور فقط في نفس الوقت (أسرع وأضمن على بيانات الجوال)
+let _active = 0;
+const _waiting = [];
+function _slot() {
+  return new Promise(r => { if (_active < _MAX_PAR) { _active++; r(); } else _waiting.push(r); });
+}
+function _release() {
+  const next = _waiting.shift();
+  if (next) next(); else _active--;
+}
+
 function _fetchImage(src, retries) {
-  return new Promise(res => {
-    let tries = 0;
-    const attempt = () => {
-      const img = new Image();
-      let settled = false;
-      const fail = () => {
-        if (settled) return; settled = true;
-        if (tries < retries) { tries++; setTimeout(attempt, 400 * tries); }
-        else res(null);
-      };
-      const timer = setTimeout(fail, 20000);            // مهلة 20 ثانية لكل محاولة
-      img.onload = () => {
-        if (settled) return; settled = true; clearTimeout(timer);
-        const ready = img.decode ? img.decode().catch(() => {}) : Promise.resolve();
-        ready.then(() => res(img));
-      };
-      img.onerror = () => { clearTimeout(timer); fail(); };
-      img.src = resolveAssetPath(src) + (tries ? (src.includes('?') ? '&' : '?') + 'r=' + tries : '');
-    };
-    attempt();
-  });
+  return (async () => {
+    for (let tries = 0; tries <= retries; tries++) {
+      await _slot();
+      const img = await new Promise(res => {
+        const im = new Image();
+        let done = false;
+        const finish = v => { if (done) return; done = true; clearTimeout(t); res(v); };
+        const t = setTimeout(() => finish(null), 45000);   // يبدأ العدّ عند بدء الطلب فقط
+        im.onload  = () => finish(im);
+        im.onerror = () => finish(null);
+        im.src = resolveAssetPath(src) + (tries ? (src.includes('?') ? '&' : '?') + 'r=' + tries : '');
+      });
+      _release();
+      if (img) { _assetLog.add(resolveAssetPath(src)); try { if (img.decode) await img.decode(); } catch (e) {} return img; }
+      if (tries < retries) await new Promise(r => setTimeout(r, 500 * (tries + 1)));
+    }
+    return null;
+  })();
 }
 
 // يُحتسب في شريط التحميل
 function loadImg(src) {
   totalToLoad++;
-  return _fetchImage(src, 2).then(img => { loadedCount++; updateLoadBar(); return img; });
+  return _fetchImage(src, 1).then(img => { loadedCount++; updateLoadBar(); return img; });
 }
 
 // تحميل صامت (لا يؤثر على شريط التحميل)
@@ -2499,16 +2512,45 @@ async function _fetchMyRank() {
 }
 
 // ── INIT ──
-window.addEventListener('load', async () => {
+// ── حفظ الأصول على الجهاز (Cache) حتى لا تُحمَّل في كل مرة ──
+function _saveAssetsOnDevice() {
+  try {
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();   // اطلب عدم حذفها تلقائياً
+    if (!('serviceWorker' in navigator)) return;
+    const urls = Array.from(_assetLog).concat(SFX.urls());
+    navigator.serviceWorker.ready.then(reg => {
+      if (reg.active) reg.active.postMessage({ type: 'precache', urls });
+    }).catch(() => {});
+  } catch (e) {}
+}
+
+// Pi SDK يُحمَّل بدون حجب الصفحة (إذا تأخر أو فشل لا تتوقف اللعبة)
+let _piInited = false;
+function _initPi() {
+  if (_piInited || typeof Pi === 'undefined') return;
+  try { Pi.init({ version: '2.0' }); _piInited = true; } catch(e) {}   // Mainnet: بدون sandbox
+}
+function _loadPiSdk() {
+  return new Promise(res => {
+    if (typeof Pi !== 'undefined') { _initPi(); return res(); }
+    const s = document.createElement('script');
+    s.src = 'https://sdk.minepi.com/pi-sdk.js';
+    s.async = true;
+    s.onload  = () => { _initPi(); res(); };
+    s.onerror = () => res();
+    document.head.appendChild(s);
+    setTimeout(res, 3000);            // لا ننتظر أكثر من 3 ثوانٍ
+  });
+}
+
+async function _boot() {
   const lbg = document.getElementById('loadBG');
 
   ldProgress(5, 'Starting...');
   await new Promise(r => setTimeout(r, 50));
 
   ldProgress(15, 'Initializing Pi...');
-  try {
-    if (typeof Pi !== 'undefined') Pi.init({ version: '2.0' });
-  } catch(e) {}
+  _loadPiSdk();   // في الخلفية، لا ننتظره
 
   ldProgress(25, 'Loading assets...');
   await new Promise(r => setTimeout(r, 30));
@@ -2546,7 +2588,10 @@ window.addEventListener('load', async () => {
   loadLocal();
   showScreen('piLogin');
   setTimeout(() => loadRemainingAssets(), 2000);
-});
+  _saveAssetsOnDevice();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _boot);
+else _boot();
 
 function ldProgress(p, txt) {
   const bar = document.getElementById('ldBar');
