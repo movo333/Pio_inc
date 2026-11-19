@@ -222,8 +222,6 @@ const TILE_IMGS = {};  // TILE_IMGS['nature'][1] = Image
 const OBJ_IMGS  = {};  // OBJ_IMGS['nature']['Tree_1.png'] = Image
 const UI_IMGS   = {};  // UI_IMGS.splash = Image
 let allLoaded = false;
-let loadedCount = 0;
-let totalToLoad = 0;
 
 // ── SETUP ROTATION (portrait device → landscape game) ──
 function setupRotation() {
@@ -254,198 +252,6 @@ function setupRotation() {
   wrapper.style.transform = 'rotate(90deg)';
 }
 
-// ── IMAGE LOADER (نسختان: حرجة وخلفية) ──
-function resolveAssetPath(src) {
-  if (!src || /^(https?:|data:|blob:)/.test(src)) return src;
-  if (src.startsWith('/assets/')) return src.slice(1);   // relative path (GitHub Pages / any sub-folder)
-  if (src.startsWith('assets/')) return src;
-  return 'assets/' + src;
-}
-
-// تحميل صورة بشكل موثوق: مهلة لكل ملف + إعادة المحاولة + decode قبل اعتبارها جاهزة
-const _assetLog = new Set();        // روابط الأصول التي تم تحميلها (لحفظها على الجهاز)
-const _MAX_PAR = 8;                 // 8 صور فقط في نفس الوقت (أسرع وأضمن على بيانات الجوال)
-let _active = 0;
-const _waiting = [];
-function _slot() {
-  return new Promise(r => { if (_active < _MAX_PAR) { _active++; r(); } else _waiting.push(r); });
-}
-function _release() {
-  const next = _waiting.shift();
-  if (next) next(); else _active--;
-}
-
-function _fetchImage(src, retries) {
-  return (async () => {
-    for (let tries = 0; tries <= retries; tries++) {
-      await _slot();
-      const img = await new Promise(res => {
-        const im = new Image();
-        let done = false;
-        const finish = v => { if (done) return; done = true; clearTimeout(t); res(v); };
-        const t = setTimeout(() => finish(null), 45000);   // يبدأ العدّ عند بدء الطلب فقط
-        im.onload  = () => finish(im);
-        im.onerror = () => finish(null);
-        im.src = resolveAssetPath(src) + (tries ? (src.includes('?') ? '&' : '?') + 'r=' + tries : '');
-      });
-      _release();
-      if (img) { _assetLog.add(resolveAssetPath(src)); try { if (img.decode) await img.decode(); } catch (e) {} return img; }
-      if (tries < retries) await new Promise(r => setTimeout(r, 500 * (tries + 1)));
-    }
-    return null;
-  })();
-}
-
-// يُحتسب في شريط التحميل
-function loadImg(src) {
-  totalToLoad++;
-  return _fetchImage(src, 1).then(img => { loadedCount++; updateLoadBar(); return img; });
-}
-
-// تحميل صامت (لا يؤثر على شريط التحميل)
-function loadImgBg(src) {
-  return _fetchImage(src, 1);
-}
-
-// جرّب عدة مسارات بالترتيب (أول ملف موجود يُستخدم) — يُحتسب كملف واحد
-async function loadImgAny(paths) {
-  totalToLoad++;
-  let found = null;
-  for (const p of paths) {
-    found = await _fetchImage(p, 1);
-    if (found) break;
-  }
-  loadedCount++; updateLoadBar();
-  return found;
-}
-
-function updateLoadBar() {
-  const pct = totalToLoad > 0 ? Math.round(loadedCount / totalToLoad * 100) : 100;
-  const bar = document.getElementById('ldBar');
-  const txt = document.getElementById('ldTxt');
-  if (bar) bar.style.width = pct + '%';
-  if (txt) txt.textContent = `Loading... ${pct}%`;
-}
-
-// ── التحميل الحرج (العالم 1 فقط = يظهر في شريط التحميل) ──
-async function loadCriticalAssets() {
-  const proms = [];
-
-  totalToLoad = 0; loadedCount = 0;   // العدّاد الحقيقي يُحسب أثناء الإضافة
-
-  // شخصية اللاعب
-  const anims = { idle:10, run:8, jump:10, dead:10, shoot:3 };
-  for (const [anim, count] of Object.entries(anims)) {
-    SPR[anim] = [];
-    for (let i = 1; i <= count; i++) {
-      proms.push(loadImg(`assets/character/${anim}${i}.png`).then(img => { SPR[anim][i-1] = img; }));
-    }
-  }
-
-  // أعداء العالم 1 فقط: snail1, bat1, tuca1
-  ['snail1','bat1','tuca1'].forEach(e =>
-    proms.push(loadImg(`assets/enemies/${e}.png`).then(img => { SPR[e] = img; }))
-  );
-
-  // صور بلاطات العالم 1 (nature) فقط
-  TILE_IMGS['nature'] = {};
-  for (let i = 1; i <= 18; i++) {
-    proms.push(loadImg(`assets/tiles/nature/${i}.png`).then(img => { TILE_IMGS['nature'][i] = img; }));
-  }
-
-  // خلفية العالم 1 + UI أساسية
-  proms.push(loadImg('assets/bg/nature_bg.png').then(img => { UI_IMGS.bg_nature = img; }));
-  proms.push(loadImg('assets/ui/splash_screen.png').then(img => { UI_IMGS.splash = img; }));
-  proms.push(loadImg('assets/ui/sky_bg.png').then(img => { UI_IMGS.sky_bg = img; }));
-  proms.push(loadImg('assets/ui/world_nature.png').then(img => { UI_IMGS.world_nature = img; }));
-  proms.push(loadImg('assets/ui/world_graveyard.png').then(img => { UI_IMGS.world_graveyard = img; }));
-  proms.push(loadImg('assets/ui/world_winter.png').then(img => { UI_IMGS.world_winter = img; }));
-  proms.push(loadImg('assets/ui/world_desert.png').then(img => { UI_IMGS.world_desert = img; }));
-
-  // أزرار التحكم الأساسية
-  ['coin','bullet','banner_win','banner_lose','btn_retry','btn_shoot',
-   'btn_left','btn_right','btn_Jumping','Restart_button'].forEach((f,i) => {
-    const keys2 = ['coin','bullet','banner_win','banner_lose','btn_retry',
-                   'btn_shoot','btn_left','btn_right','btn_jump','restart_btn'];
-    const files  = ['coin.png','bullet.png','banner_win.png','banner_lose.png','btn_retry.png',
-                    'btn_shoot.png','btn_left.png','btn_right.png','btn_Jumping.png','Restart_button.png'];
-    proms.push(loadImg('assets/buttons/' + files[i]).then(img => { UI_IMGS[keys2[i]] = img; }));
-  });
-
-  // ديكور العالم 1
-  OBJ_IMGS['nature'] = {};
-  const nat = ['Tree_1.png','Tree_2.png','Tree_3.png','Bush__1_.png','Bush__2_.png',
-               'Bush__3_.png','Mushroom_1.png','Mushroom_2.png','Stone.png','Crate.png'];
-  nat.forEach(o => proms.push(loadImg(`assets/objects/nature/${o}`).then(img => { OBJ_IMGS['nature'][o] = img; })));
-
-  // ── تحميل كل العوالم كاملاً قبل الفتح ──
-
-  // أعداء العوالم 2-4
-  ['bat2','bat3','snail2','snail3',
-   'spikebee1','spikebee2','spikebee3','spikebee4',
-   'tuca2','tuca3'].forEach(e =>
-    proms.push(loadImg(`assets/enemies/${e}.png`).then(img => { SPR[e] = img; }))
-  );
-
-  // بلاطات العوالم 2-4
-  const rest = {
-    graveyard: 16,
-    winter:    18,
-    desert:    16,
-  };
-  for (const [world, count] of Object.entries(rest)) {
-    TILE_IMGS[world] = {};
-    for (let i = 1; i <= count; i++) {
-      proms.push(loadImg(`assets/tiles/${world}/${i}.png`).then(img => { TILE_IMGS[world][i] = img; }));
-    }
-  }
-  // عظام المقبرة
-  for (let b = 1; b <= 4; b++) {
-    proms.push(loadImg(`assets/tiles/graveyard/bone${b}.png`).then(img => { TILE_IMGS['graveyard']['bone'+b] = img; }));
-  }
-
-  // خلفيات العوالم 2-4
-  ['graveyard','winter','desert'].forEach(w => {
-    proms.push(loadImg(`assets/bg/${w}_bg.png`).then(img => { UI_IMGS['bg_'+w] = img; }));
-  });
-
-  // ديكور العوالم 2-4
-  const decoSets = {
-    graveyard: ['Tree.png','Dead_Tree.png','TombStone__1_.png','TombStone__2_.png','TombStone__3_.png','DeadBush.png','Bush__1_.png','Bush__2_.png','Crate.png','Bone.png','Skull.png','Candle.png','Skeleton.png'],
-    winter:    ['Tree_1.png','Tree_2.png','Tree_3.png','SnowMan.png','Stone.png','IceBox.png','IcePillar.png','Snowflake.png','Crystal.png','Crate.png'],
-    desert:    ['Tree.png','Dead_Tree.png','Cactus__1_.png','Cactus__2_.png','Cactus__3_.png','Bush__1_.png','Bush__2_.png','Stone.png','Stone_2.png','Crate.png'],
-  };
-  for (const [world, items] of Object.entries(decoSets)) {
-    OBJ_IMGS[world] = {};
-    items.forEach(o => proms.push(loadImg(`assets/objects/${world}/${o}`).then(img => { OBJ_IMGS[world][o] = img; })));
-  }
-
-  // ── أزرار إضافية ──
-  ['btn_play.png','heart.png','lock.png','star.png',
-   'btn_back.png','Picsa8.png','banner_win(Copy).png'].forEach(f => {
-    const key = f.replace(/\.[^.]+$/, '').replace(/[()]/g,'');
-    proms.push(loadImgAny(['assets/buttons/' + f, 'assets/ui/' + f]).then(img => { if(img) UI_IMGS[key] = img; }));
-  });
-
-  // ── صور UI إضافية ──
-  ['levels_panel.png','lock_panel.png'].forEach(f => {
-    const key = f.replace(/\.[^.]+$/, '').replace(/_/g,'_');
-    proms.push(loadImg('assets/ui/' + f).then(img => { if(img) UI_IMGS[key] = img; }));
-  });
-
-  // Picsa8 مع fallback
-  proms.push(loadImgAny(['assets/buttons/Picsa8.png','assets/ui/Picsa8.png',
-                         'assets/buttons/banner_win(Copy).png','assets/ui/banner_win(Copy).png'])
-    .then(img => { if (img) UI_IMGS.picsa8 = img; }));
-
-  // انتظر حتى تنتهي كل الأصول (كل ملف له مهلة وإعادة محاولة خاصة به)
-  await Promise.all(proms);
-}
-
-// ── التحميل في الخلفية (فارغة - كل شيء يُحمَّل في Critical الآن) ──
-function loadRemainingAssets() {
-  // كل الأصول تُحمَّل في loadCriticalAssets الآن
-}
 function imgOK(img) { return img && img.complete && img.naturalWidth > 0; }
 
 // ── SAVE / LOAD ──
@@ -2517,7 +2323,7 @@ function _saveAssetsOnDevice() {
   try {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();   // اطلب عدم حذفها تلقائياً
     if (!('serviceWorker' in navigator)) return;
-    const urls = Array.from(_assetLog).concat(SFX.urls());
+    const urls = Assets.log().concat(SFX.urls());
     navigator.serviceWorker.ready.then(reg => {
       if (reg.active) reg.active.postMessage({ type: 'precache', urls });
     }).catch(() => {});
@@ -2543,38 +2349,48 @@ function _loadPiSdk() {
   });
 }
 
+// Shows the list of missing REQUIRED files and waits for the player: Retry or Continue.
+function _showLoadReport(failed) {
+  return new Promise(resolve => {
+    const box = document.getElementById('ldReport');
+    const list = document.getElementById('ldReportList');
+    const title = document.getElementById('ldReportTitle');
+    if (!box) return resolve('continue');
+    title.textContent = '⚠️ ' + failed.length + ' game file(s) could not be loaded:';
+    list.textContent = failed.slice(0, 14).join('\n') + (failed.length > 14 ? '\n… +' + (failed.length - 14) + ' more' : '');
+    box.style.display = 'block';
+    const done = which => { box.style.display = 'none'; resolve(which); };
+    document.getElementById('ldRetry').onclick = () => done('retry');
+    document.getElementById('ldContinue').onclick = () => done('continue');
+  });
+}
+
 async function _boot() {
   const lbg = document.getElementById('loadBG');
 
   ldProgress(5, 'Starting...');
-  await new Promise(r => setTimeout(r, 50));
+  _loadPiSdk();                       // في الخلفية — لا ننتظره
 
-  ldProgress(15, 'Initializing Pi...');
-  _loadPiSdk();   // في الخلفية، لا ننتظره
-
-  ldProgress(25, 'Loading assets...');
-  await new Promise(r => setTimeout(r, 30));
-
-  // تحميل كل الأصول مع تتبع حقيقي للتقدم
-  totalToLoad = 0;
-  loadedCount = 0;
-  
-  // نستبدل updateLoadBar لتعرض النسبة الحقيقية
-  window._origUpdateLoadBar = updateLoadBar;
-  window.updateLoadBar = function() {
-    const pct = totalToLoad > 0 ? Math.round(loadedCount / totalToLoad * 100) : 0;
-    ldProgress(Math.max(20, Math.min(95, 20 + pct * 0.75)), 'Loading assets... ' + pct + '%');
+  // ── تحميل كل الأصول؛ لا تبدأ اللعبة قبل اكتمالها ──
+  ldProgress(10, 'Loading assets... 0%');
+  const onProgress = (done, total) => {
+    const pct = Math.round(done / total * 100);
+    ldProgress(10 + pct * 0.8, 'Loading assets... ' + pct + '%');
   };
-
-  await loadCriticalAssets();
-  window.updateLoadBar = window._origUpdateLoadBar;
+  let res = await Assets.loadAll(onProgress);
+  while (res.failed.length) {
+    console.warn('[Assets] missing required files:', res.failed);
+    const choice = await _showLoadReport(res.failed);
+    if (choice === 'continue') break;
+    ldProgress(10, 'Retrying...');
+    res = await Assets.loadAll(onProgress);
+  }
 
   ldProgress(93, 'Loading sounds...');
   try { await SFX.preloadAll(); } catch(e) {}
 
-  ldProgress(90, 'Preparing levels...');
+  ldProgress(97, 'Preparing levels...');
   loadLocal();
-  await new Promise(r => setTimeout(r, 30));
 
   if (lbg && UI_IMGS.splash) {
     lbg.style.backgroundImage = `url(${UI_IMGS.splash.src})`;
@@ -2582,12 +2398,10 @@ async function _boot() {
   }
 
   ldProgress(100, 'Ready!');
-  await new Promise(r => setTimeout(r, 500));
+  await new Promise(r => setTimeout(r, 400));
 
   // الدخول عبر Pi Network (أو اللعب كضيف)
-  loadLocal();
   showScreen('piLogin');
-  setTimeout(() => loadRemainingAssets(), 2000);
   _saveAssetsOnDevice();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _boot);
