@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════
-//  SUPER PIO - Game Engine
+//  SUPER COWBOY - Game Engine
 //  Orientation: PORTRAIT device, LANDSCAPE game rotated 90°
 //  Player runs RIGHT → progress toward goal
 //  Ground = bottom 30% of game canvas
@@ -150,6 +150,17 @@ const SFX = (() => {
     stopAll,
     mute(v)   { muted = v; },
     isMuted() { return muted; },
+    // تحميل كل الأصوات قبل بدء اللعبة (مع مهلة لكل ملف)
+    preloadAll() {
+      const names = Object.keys(MAP);
+      return Promise.all(names.map(n => new Promise(res => {
+        loadBuffer(n);
+        const t0 = Date.now();
+        const iv = setInterval(() => {
+          if (acBuffers[n] || Date.now() - t0 > 15000) { clearInterval(iv); res(); }
+        }, 100);
+      })));
+    },
     unlock()  {
       // تحميل كل الأصوات في AudioContext بعد أول تفاعل
       Object.keys(MAP).forEach(n => loadBuffer(n));
@@ -241,39 +252,58 @@ function setupRotation() {
 
 // ── IMAGE LOADER (نسختان: حرجة وخلفية) ──
 function resolveAssetPath(src) {
-  if (!src || src.startsWith('http') || src.startsWith('data:')) return src;
-  if (src.startsWith('assets/')) return src.slice(1);   // relative path (GitHub Pages / any sub-folder)
+  if (!src || /^(https?:|data:|blob:)/.test(src)) return src;
+  if (src.startsWith('/assets/')) return src.slice(1);   // relative path (GitHub Pages / any sub-folder)
   if (src.startsWith('assets/')) return src;
   return 'assets/' + src;
 }
 
-// جرّب عدة مسارات بالترتيب (أول ملف موجود يُستخدم)
-async function loadImgAny(paths) {
-  for (const p of paths) {
-    const img = await loadImgBg(p);
-    if (img) return img;
-  }
-  return null;
+// تحميل صورة بشكل موثوق: مهلة لكل ملف + إعادة المحاولة + decode قبل اعتبارها جاهزة
+function _fetchImage(src, retries) {
+  return new Promise(res => {
+    let tries = 0;
+    const attempt = () => {
+      const img = new Image();
+      let settled = false;
+      const fail = () => {
+        if (settled) return; settled = true;
+        if (tries < retries) { tries++; setTimeout(attempt, 400 * tries); }
+        else res(null);
+      };
+      const timer = setTimeout(fail, 20000);            // مهلة 20 ثانية لكل محاولة
+      img.onload = () => {
+        if (settled) return; settled = true; clearTimeout(timer);
+        const ready = img.decode ? img.decode().catch(() => {}) : Promise.resolve();
+        ready.then(() => res(img));
+      };
+      img.onerror = () => { clearTimeout(timer); fail(); };
+      img.src = resolveAssetPath(src) + (tries ? (src.includes('?') ? '&' : '?') + 'r=' + tries : '');
+    };
+    attempt();
+  });
 }
 
+// يُحتسب في شريط التحميل
 function loadImg(src) {
   totalToLoad++;
-  return new Promise(res => {
-    const img = new Image();
-    img.onload  = () => { loadedCount++; updateLoadBar(); res(img); };
-    img.onerror = () => { loadedCount++; updateLoadBar(); res(null); };
-    img.src = resolveAssetPath(src);
-  });
+  return _fetchImage(src, 2).then(img => { loadedCount++; updateLoadBar(); return img; });
 }
 
-// تحميل صامت في الخلفية (لا يؤثر على شريط التحميل)
+// تحميل صامت (لا يؤثر على شريط التحميل)
 function loadImgBg(src) {
-  return new Promise(res => {
-    const img = new Image();
-    img.onload  = () => res(img);
-    img.onerror = () => res(null);
-    img.src = resolveAssetPath(src);
-  });
+  return _fetchImage(src, 1);
+}
+
+// جرّب عدة مسارات بالترتيب (أول ملف موجود يُستخدم) — يُحتسب كملف واحد
+async function loadImgAny(paths) {
+  totalToLoad++;
+  let found = null;
+  for (const p of paths) {
+    found = await _fetchImage(p, 1);
+    if (found) break;
+  }
+  loadedCount++; updateLoadBar();
+  return found;
 }
 
 function updateLoadBar() {
@@ -288,9 +318,7 @@ function updateLoadBar() {
 async function loadCriticalAssets() {
   const proms = [];
 
-  // حساب إجمالي الأصول مسبقاً لشريط التحميل الدقيق
-  // شخصية: 41، أعداء: 13، بلاطات: 68+4، خلفيات: 4، UI: 7، أزرار: 10، ديكور: ~35
-  totalToLoad = 41 + 13 + 72 + 4 + 7 + 10 + 35;
+  totalToLoad = 0; loadedCount = 0;   // العدّاد الحقيقي يُحسب أثناء الإضافة
 
   // شخصية اللاعب
   const anims = { idle:10, run:8, jump:10, dead:10, shoot:3 };
@@ -397,9 +425,8 @@ async function loadCriticalAssets() {
                          'assets/buttons/banner_win(Copy).png','assets/ui/banner_win(Copy).png'])
     .then(img => { if (img) UI_IMGS.picsa8 = img; }));
 
-  // انتظر حتى يكتمل كل شيء (أو 30 ثانية كحد أقصى)
-  const timeout = new Promise(res => setTimeout(res, 30000));
-  await Promise.race([Promise.all(proms), timeout]);
+  // انتظر حتى تنتهي كل الأصول (كل ملف له مهلة وإعادة محاولة خاصة به)
+  await Promise.all(proms);
 }
 
 // ── التحميل في الخلفية (فارغة - كل شيء يُحمَّل في Critical الآن) ──
@@ -579,22 +606,17 @@ let   _piAccessToken = null;
 
 // المكافآت — المفاتيح يجب أن تطابق buy('<id>', price) في index.html وكتالوج الخادم
 const PI_REWARDS = {
-  ammo:   () => { curAmmo = Math.min(curAmmo + 10, 30); updAmmo(); },
-  lives:  () => { GS.lives += 3; updHUD(); },
   coins:  () => { GS.coins += 1000; updHUD(); },
   speed:  () => { GS.speedBoost = true; updHUD(); },
   worlds: () => { GS.allWorlds = true; buildWorldGrid(); },
-  mega:   () => { GS.allWorlds = true; GS.lives += 5; curAmmo = Math.min(curAmmo + 30, 30);
-                  updAmmo(); updHUD(); buildWorldGrid(); },
+  mega:   () => { GS.allWorlds = true; GS.coins += 1000; updHUD(); buildWorldGrid(); },
 };
 
 const PI_MEMOS = {
-  ammo:   'Super Pio: Ammo Pack ×10',
-  lives:  'Super Pio: Lives ×3',
-  coins:  'Super Pio: 1000 Coins',
-  speed:  'Super Pio: Speed Boost',
-  worlds: 'Super Pio: Unlock All Worlds',
-  mega:   'Super Pio: Mega Bundle',
+  coins:  'Super Cowboy: 1000 Coins',
+  speed:  'Super Cowboy: Speed Boost',
+  worlds: 'Super Cowboy: Unlock All Worlds',
+  mega:   'Super Cowboy: Mega Bundle (All Worlds + 1000 Coins)',
 };
 
 function _applyPiReward(item) {
@@ -688,7 +710,7 @@ async function buy(item, amount) {
 
   const paymentData = {
     amount,
-    memo:     PI_MEMOS[item] || 'Super Pio Purchase',
+    memo:     PI_MEMOS[item] || 'Super Cowboy Purchase',
     metadata: { item, player: GS.piUser.uid }
   };
 
@@ -722,64 +744,10 @@ async function buy(item, amount) {
 }
 
 // ══════════════════════════════════════════════════════
-//  SHOP TABS (Buy / Refer)
+//  SHOP
 // ══════════════════════════════════════════════════════
 
-function switchShopTab(tab) {
-  ['iap','ref'].forEach(t => {
-    const el = document.getElementById('shop-tab-' + t);
-    const btn = document.getElementById('tab-' + t);
-    if (el) el.style.display = 'none';
-    if (btn) { btn.style.background = 'transparent'; btn.style.color = '#FFD700'; }
-  });
-  const active = document.getElementById('shop-tab-' + tab);
-  const activeBtn = document.getElementById('tab-' + tab);
-  if (active) active.style.display = 'block';
-  if (activeBtn) { activeBtn.style.background = '#FFD700'; activeBtn.style.color = '#000'; }
-  if (tab === 'ref') {
-    const codeEl = document.getElementById('myRefCode');
-    if (codeEl && GS.piUser) codeEl.textContent = generateReferralCode(GS.piUser.uid);
-  }
-}
-
-// ══════════════════════════════════════════════════════
-//  REFERRAL SYSTEM — نظام الإحالة
-// ══════════════════════════════════════════════════════
-
-function generateReferralCode(uid) {
-  return 'SPG-' + uid.substring(0, 6).toUpperCase();
-}
-
-function getReferralCode() {
-  if (!GS.piUser) { alert('Please login first'); return; }
-  const code = generateReferralCode(GS.piUser.uid);
-  const msg = '🎮 Play Super Pio and get a reward!\n\nReferral Code: ' + code + '\n\nShare with your friends and earn 5000 coins for every person who joins with your code!';
-  if (navigator.share) {
-    navigator.share({ title: 'Super Pio', text: msg });
-  } else {
-    navigator.clipboard.writeText(msg).then(() => alert('✅ Referral message copied!'));
-  }
-}
-
-function applyReferralCode(code) {
-  if (!code || !GS.piUser) return;
-  const used = localStorage.getItem('sp_ref_used');
-  if (used) { alert('You have already used a referral code'); return; }
-  if (code.startsWith('SPG-') && code.length === 10) {
-    GS.coins += 5000;
-    updHUD();
-    localStorage.setItem('sp_ref_used', '1');
-    saveLocal(); cloudSave();
-    alert('🎁 Done! You received 5000 coins as a referral reward!');
-  } else {
-    alert('❌ Invalid referral code');
-  }
-}
-
-function showReferralDialog() {
-  const code = prompt('Enter referral code (example: SPG-ABC123):');
-  if (code) applyReferralCode(code.trim().toUpperCase());
-}
+function switchShopTab() { /* single tab: Pi Store */ }
 
 // ══════════════════════════════════════════════════════
 //  EXIT DIALOG — تنبيه الخروج
@@ -2558,6 +2526,9 @@ window.addEventListener('load', async () => {
 
   await loadCriticalAssets();
   window.updateLoadBar = window._origUpdateLoadBar;
+
+  ldProgress(93, 'Loading sounds...');
+  try { await SFX.preloadAll(); } catch(e) {}
 
   ldProgress(90, 'Preparing levels...');
   loadLocal();
