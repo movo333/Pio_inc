@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-<title>Super Pio</title>
+<title>Super Cowboy</title>
 <script src="https://sdk.minepi.com/pi-sdk.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;}
@@ -26,15 +26,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
 }
 #loadBG.show{opacity:1;}
 .load-logo{
-  font-size:48px;font-weight:900;color:#FFD700;
+  font-size:38px;font-weight:900;color:#FFD700;
   text-shadow:0 0 30px #FF6B00,4px 4px 0 #8B0000;
-  letter-spacing:4px;margin-bottom:8px;
+  letter-spacing:3px;margin-bottom:8px;
   animation:floatAnim 2s ease-in-out infinite;
   position:relative;z-index:2;
 }
 .load-sub{font-size:13px;color:#aaffaa;letter-spacing:3px;margin-bottom:40px;position:relative;z-index:2;}
 .ld-bar-wrap{width:70%;max-width:280px;background:rgba(255,255,255,0.12);border-radius:20px;height:8px;overflow:hidden;position:relative;z-index:2;}
 .ld-bar{height:100%;background:linear-gradient(90deg,#FFD700,#FF6B00);border-radius:20px;width:0%;transition:width .25s ease;}
+#ldMsg{color:#ffd966;font-size:13px;line-height:1.5;text-align:center;max-width:300px;margin-top:14px;padding:0 12px;position:relative;z-index:2;}
 .ld-txt{color:#888;font-size:12px;margin-top:10px;letter-spacing:1px;position:relative;z-index:2;}
 
 /* ── PI LOGIN ── */
@@ -53,7 +54,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
 #splashBG{position:absolute;inset:0;background-size:cover;background-position:bottom;}
 .splash-overlay{position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.2),rgba(0,0,0,0.7));}
 .splash-content{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;}
-.splash-logo{font-size:62px;font-weight:900;color:#FFD700;text-shadow:0 0 40px #FF6B00,5px 5px 0 #8B0000;letter-spacing:6px;margin-bottom:4px;animation:floatAnim 3s ease-in-out infinite;}
+.splash-logo{font-size:46px;font-weight:900;color:#FFD700;text-shadow:0 0 40px #FF6B00,5px 5px 0 #8B0000;letter-spacing:4px;margin-bottom:4px;animation:floatAnim 3s ease-in-out infinite;}
 .splash-sub{font-size:14px;color:#aaffaa;letter-spacing:3px;margin-bottom:50px;}
 .btn-play-img{width:180px;cursor:pointer;filter:drop-shadow(0 4px 15px rgba(255,200,0,0.5));transition:transform 0.1s;}
 .btn-play-img:active{transform:scale(0.93);}
@@ -523,9 +524,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
   gap: 12px !important;
   padding: 8px !important;
 }
-#shop-tab-ref {
-  padding: 16px !important;
-}
 
 /* Leaderboard - أفقي */
 #leaderboardScreen {
@@ -596,17 +594,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
 <!-- LOADING -->
 <div class="screen active" id="loadingScreen">
   <div id="loadBG"></div>
-  <div class="load-logo"> SUPER PIO</div>
+  <div class="load-logo"> SUPER COWBOY</div>
 
   <div class="ld-bar-wrap"><div class="ld-bar" id="ldBar"></div></div>
   <div class="ld-txt" id="ldTxt">Loading... 0%</div>
+  <div id="ldMsg">Please wait until all game assets are loaded so the game runs smoothly.</div>
   <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px;">...</div>
 </div>
 
 <!-- PI LOGIN -->
 <div class="screen" id="piLogin">
   <div class="pi-sym">π</div>
-  <div class="pi-ttl">Super Pio</div>
+  <div class="pi-ttl">Super Cowboy</div>
   <div class="pi-sub">Sign in with Pi Network to save your progress, compete on leaderboards and make purchases!</div>
   <button class="pi-btn" onclick="piAuth()">
     🔐 Login with Pi Network
@@ -622,7 +621,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
   <div id="splashBG"></div>
   <div class="splash-overlay"></div>
   <div class="splash-content">
-    <div class="splash-logo">SUPER PIO</div>
+    <div class="splash-logo">SUPER COWBOY</div>
     <div class="splash-sub">The game is in beta testing, so it's normal to find some bugs.</div>
     <img id="btnPlayImg" class="btn-play-img" src="assets/buttons/btn_play.png" onclick="showWorldSelect()" alt="PLAY" onerror="this.style.display='none';document.getElementById('btnPlayFallback').style.display='block'">
     <button id="btnPlayFallback" onclick="showWorldSelect()" style="display:none;background:linear-gradient(135deg,#FFD700,#FF6B00);border:none;border-radius:50px;padding:18px 56px;font-size:26px;font-weight:900;color:#fff;cursor:pointer;margin-top:10px;">▶ PLAY</button>
@@ -782,33 +781,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
     <button onclick="closeShop()" style="position:absolute;top:10px;left:14px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.25);border-radius:20px;padding:6px 14px;font-size:14px;color:#fff;cursor:pointer;display:flex;align-items:center;gap:6px;z-index:10;">◀ Back</button>
     <div class="shop-ttl">🛒 Pi Store</div>
 
-    <!-- تبويبات -->
-    <div style="display:flex;gap:8px;padding:0 8px 8px;justify-content:center;">
-      <button id="tab-iap" onclick="switchShopTab('iap')" style="flex:1;padding:8px;border-radius:12px;border:2px solid #FFD700;background:#FFD700;color:#000;font-weight:800;font-size:13px;cursor:pointer;">💎 Buy</button>
-      <button id="tab-ref" onclick="switchShopTab('ref')" style="flex:1;padding:8px;border-radius:12px;border:2px solid #FFD700;background:transparent;color:#FFD700;font-weight:800;font-size:13px;cursor:pointer;">👥 Refer</button>
-    </div>
-
     <!-- تبويب الشراء -->
     <div id="shop-tab-iap" style="display:block;padding:8px;">
-    <div class="si"><div class="si-ico"><img src="assets/buttons/bullet.png" style="width:40px;height:24px;object-fit:contain;"></div><div class="si-inf"><div class="si-nm">Ammo Pack ×10</div><div class="si-ds">10 extra bullets for your gun</div></div><button class="si-btn" onclick="buy('ammo',0.5)">0.5π</button></div>
-    <div class="si"><div class="si-ico">❤️</div><div class="si-inf"><div class="si-nm">Lives ×3</div><div class="si-ds">3 extra lives to keep playing</div></div><button class="si-btn" onclick="buy('lives',1)">1π</button></div>
     <div class="si"><div class="si-ico"><img src="assets/buttons/coin.png" style="width:36px;height:36px;object-fit:contain;" onerror="this.parentNode.innerHTML='🪙'"></div><div class="si-inf"><div class="si-nm">1000 Coins</div><div class="si-ds">1000 in-game coins instantly</div></div><button class="si-btn" onclick="buy('coins',5)">5π</button></div>
     <div class="si"><div class="si-ico">⚡</div><div class="si-inf"><div class="si-nm">Speed Boost</div><div class="si-ds">Move faster for this session</div></div><button class="si-btn" onclick="buy('speed',0.5)">0.5π</button></div>
     <div class="si"><div class="si-ico">🌍</div><div class="si-inf"><div class="si-nm">Unlock All Worlds</div><div class="si-ds">Access all 4 worlds instantly</div></div><button class="si-btn" onclick="buy('worlds',5)">5π</button></div>
-    <div class="si"><div class="si-ico">💎</div><div class="si-inf"><div class="si-nm">Mega Bundle</div><div class="si-ds">All worlds + 30 ammo + 5 lives</div></div><button class="si-btn" onclick="buy('mega',8)">8π</button></div>
-    </div>
-
-
-    <!-- Referral Tab -->
-    <div id="shop-tab-ref" style="display:none;padding:16px;text-align:center;">
-      <div style="font-size:40px;margin-bottom:12px;">👥</div>
-      <div style="color:#FFD700;font-size:16px;font-weight:800;margin-bottom:8px;">Referral Program</div>
-      <div style="color:#aaa;font-size:13px;margin-bottom:20px;line-height:1.6;">Invite a friend and earn<br><span style="color:#FFD700;font-weight:800;font-size:18px;">5000 Coins</span> for every person who joins with your code!</div>
-      <button onclick="getReferralCode()" style="width:100%;padding:14px;background:linear-gradient(135deg,#FFD700,#FF8C00);border:none;border-radius:14px;color:#000;font-size:15px;font-weight:900;cursor:pointer;margin-bottom:12px;">📤 Share Referral Code</button>
-      <button onclick="showReferralDialog()" style="width:100%;padding:14px;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);border-radius:14px;color:#fff;font-size:15px;font-weight:700;cursor:pointer;">🎁 Enter Referral Code</button>
-      <div style="margin-top:16px;padding:12px;background:rgba(255,215,0,0.08);border-radius:12px;color:#FFD700;font-size:12px;">
-        Your Code: <b id="myRefCode">Login to get your referral code</b>
-      </div>
+    <div class="si"><div class="si-ico">💎</div><div class="si-inf"><div class="si-nm">Mega Bundle</div><div class="si-ds">All worlds + 1000 coins</div></div><button class="si-btn" onclick="buy('mega',8)">8π</button></div>
     </div>
   </div>
 </div>
