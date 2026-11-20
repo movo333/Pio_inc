@@ -460,7 +460,7 @@ function onIncompletePaymentFound(payment) {
 async function piAuth() {
   try {
     if (typeof Pi === 'undefined') { alert('⚠️ Pi SDK not loaded. Open the game in Pi Browser.'); playGuest(); return; }
-    const auth = await Pi.authenticate(['username', 'payments'], onIncompletePaymentFound);
+    const auth = await Pi.authenticate(['username', 'payments', 'wallet_address'], onIncompletePaymentFound);
     _piAccessToken = auth.accessToken;
     GS.piUser = auth.user;
     const badge = document.getElementById('piUserBadge');
@@ -2372,11 +2372,7 @@ window.addEventListener('load', async () => {
   }
   try {
     if (typeof Pi !== 'undefined') {
-      // sandbox فقط عند التشغيل داخل sandbox.minepi.com — وإلا false (Pi Browser العادي)
-      const _anc = (location.ancestorOrigins && location.ancestorOrigins[0]) || document.referrer || '';
-      const _inSandbox = _anc.indexOf('sandbox.minepi.com') !== -1 || location.search.indexOf('sandbox=1') !== -1;
-      Pi.init({ version: '2.0', sandbox: _inSandbox });
-      console.log('[Pi] init sandbox =', _inSandbox);
+      Pi.init({ version: '2.0', sandbox: true }); // تطبيق Testnet
     }
   } catch(e) {}
 
