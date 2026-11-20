@@ -2360,6 +2360,16 @@ window.addEventListener('load', async () => {
   const lbg = document.getElementById('loadBG');
 
   ldProgress(10, 'Initializing Pi...');
+  // إذا لم يكن Pi SDK محمّلاً من index.html نحمّله بأنفسنا
+  if (typeof Pi === 'undefined') {
+    await new Promise(res => {
+      const s = document.createElement('script');
+      s.src = 'https://sdk.minepi.com/pi-sdk.js';
+      s.onload = res; s.onerror = res;
+      document.head.appendChild(s);
+      setTimeout(res, 6000);
+    });
+  }
   try {
     if (typeof Pi !== 'undefined') {
       // sandbox فقط عند التشغيل داخل sandbox.minepi.com — وإلا false (Pi Browser العادي)
