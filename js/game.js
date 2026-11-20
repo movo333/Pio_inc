@@ -459,7 +459,7 @@ function onIncompletePaymentFound(payment) {
 // ── تسجيل الدخول بـ Pi ──
 async function piAuth() {
   try {
-    if (typeof Pi === 'undefined') { playGuest(); return; }
+    if (typeof Pi === 'undefined') { alert('⚠️ Pi SDK not loaded. Open the game in Pi Browser.'); playGuest(); return; }
     const auth = await Pi.authenticate(['username', 'payments'], onIncompletePaymentFound);
     _piAccessToken = auth.accessToken;
     GS.piUser = auth.user;
@@ -471,6 +471,7 @@ async function piAuth() {
     rewardRegister(); // منح مكافأة 1 Test-Pi عند أول تسجيل (بدون انتظار)
   } catch(e) {
     console.error('[Pi] Auth failed:', e);
+    alert('⚠️ Pi login failed:\n' + ((e && (e.message || e.error)) || JSON.stringify(e)));
     playGuest();
   }
 }
@@ -639,15 +640,18 @@ async function _rewardCall(action) {
   return data;
 }
 
-async function rewardRegister() {
+function _rwKey() { return 'spio_reward_' + (GS.piUser ? GS.piUser.uid : 'guest'); }
+function _rwSave() { try { localStorage.setItem(_rwKey(), JSON.stringify(rewardState)); } catch(e) {} }
+
+// مكافأة التسجيل: تُمنح مرة واحدة لكل حساب Pi على هذا الجهاز
+function rewardRegister() {
   if (!GS.piUser || !_piAccessToken) return;
-  try {
-    const d = await _rewardCall('register');
-    rewardState = d.reward;
-    if (d.newly_granted) setTimeout(() => openWallet(true), 400);
-  } catch (e) {
-    console.warn('[Reward] register failed:', e.message);
-  }
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(_rwKey()) || 'null'); } catch(e) {}
+  if (saved) { rewardState = saved; return; }
+  rewardState = { amount: 1, status: 'ready', txid: null };
+  _rwSave();
+  setTimeout(() => openWallet(true), 400);
 }
 
 function openWallet(isNew) {
@@ -656,16 +660,10 @@ function openWallet(isNew) {
   document.getElementById('walletMsg').textContent = '';
   renderWallet();
   document.getElementById('walletScreen').style.display = 'flex';
-  if (!rewardState) rewardRefresh();
 }
 
 function closeWallet() {
   document.getElementById('walletScreen').style.display = 'none';
-}
-
-async function rewardRefresh() {
-  try { const d = await _rewardCall('status'); rewardState = d.reward; renderWallet(); }
-  catch (e) { document.getElementById('walletMsg').textContent = '⚠️ ' + e.message; }
 }
 
 function renderWallet() {
@@ -692,12 +690,12 @@ async function withdrawReward() {
   msg.textContent = 'Sending your Test-Pi, please wait...';
   try {
     const d = await _rewardCall('withdraw');
-    rewardState = d.reward;
+    rewardState = { amount: 1, status: 'withdrawn', txid: d.txid || null };
+    _rwSave();
     SFX.play('purchase');
-    msg.textContent = '🎉 1 Test-Pi sent to your wallet!' + (d.reward.txid ? '\nTX: ' + d.reward.txid : '');
+    msg.textContent = '🎉 1 Test-Pi sent to your wallet!' + (d.txid ? '\nTX: ' + d.txid : '');
   } catch (e) {
     msg.textContent = '❌ ' + e.message;
-    rewardRefresh();
   } finally {
     _rewardBusy = false; renderWallet();
   }
@@ -2363,7 +2361,13 @@ window.addEventListener('load', async () => {
 
   ldProgress(10, 'Initializing Pi...');
   try {
-    if (typeof Pi !== 'undefined') Pi.init({ version: '2.0', sandbox: true });
+    if (typeof Pi !== 'undefined') {
+      // sandbox فقط عند التشغيل داخل sandbox.minepi.com — وإلا false (Pi Browser العادي)
+      const _anc = (location.ancestorOrigins && location.ancestorOrigins[0]) || document.referrer || '';
+      const _inSandbox = _anc.indexOf('sandbox.minepi.com') !== -1 || location.search.indexOf('sandbox=1') !== -1;
+      Pi.init({ version: '2.0', sandbox: _inSandbox });
+      console.log('[Pi] init sandbox =', _inSandbox);
+    }
   } catch(e) {}
 
   ldProgress(20, 'Loading assets...');
