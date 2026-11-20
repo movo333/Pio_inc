@@ -2372,7 +2372,7 @@ window.addEventListener('load', async () => {
   }
   try {
     if (typeof Pi !== 'undefined') {
-      Pi.init({ version: '2.0', sandbox: true }); // تطبيق Testnet
+      Pi.init({ version: '2.0', sandbox: false }); // تطبيق Testnet
     }
   } catch(e) {}
 
