@@ -67,6 +67,8 @@ const coinsH = (k,c0,n,r,step) => { for (let i=0;i<n;i++) k.co.push({c:c0+i*(ste
 const arc = (k,c0,len,r,h) => { for (let i=0;i<len;i++) k.co.push({c:c0+i, r:r-Math.round(Math.sin(Math.PI*(i+.5)/len)*h)}); };
 const plat = (k,c,r,len,coins) => { k.p.push({c,r,len}); if (coins!==false) coinsH(k,c,len,r-1); };
 const brk = (k,c,r,heart) => k.br.push({c,r,hasHeart:!!heart});
+// مجموعة أشواك: صورة واحدة، تتناوب بين النوع 1 (عرض 3) والنوع 2 (عرض 4)
+const spk = (x,k,c) => { const v=(x.spk++%2)+1, w=v===1?3:4; k.sp.push({c,w,v}); return w; };
 
 // ═════════ القطع (chunks) — عرض كل قطعة 30 عموداً ═════════
 
@@ -90,6 +92,21 @@ function ch_gap(x) { const k=mk();
   brk(k,gc+sz+2,G-5,false);
   W_(x,k,gc+sz+x.ri(4,6));
   if (x.diff>=3) F_(x,k,gc+(sz>>1),G-6);
+  return k; }
+
+// سلسلة هوات صغيرة متتالية (مثل ماريو)
+function ch_gap_series(x) { const k=mk();
+  const maxSz=Math.min(4,2+(x.diff>>3)+(x.diff>=3?1:0));
+  let c=x.ri(5,6), n=0;
+  while (n<3){
+    const sz=x.ri(2,maxSz);
+    if (c+sz>26) break;
+    k.ga.push({c,len:sz}); arc(k,c-1,sz+2,G-2,3);
+    c+=sz+x.ri(4,5); n++;
+  }
+  if (x.diff>=2) W_(x,k,x.ri(3,5)+ (k.ga[0]?k.ga[0].c+k.ga[0].len+1:8));
+  if (x.diff>=5) F_(x,k,x.ri(10,22),G-6);
+  brk(k,x.ri(8,22),G-5,x.rand()<.3);
   return k; }
 
 // جبل: درج صاعد ثم هضبة ثم درج نازل
@@ -159,7 +176,7 @@ function ch_spring_tower(x) { const k=mk();
   brk(k,2,G-5,true);
   plat(k,8,G-5,7); plat(k,17,G-4,5);
   coinsH(k,9,5,G-8);
-  if (x.diff>=7) for (let c=10;c<=12;c++) k.sp.push({c,r:G-1});
+  if (x.diff>=7) spk(x,k,10);
   W_(x,k,x.ri(20,24));
   if (x.diff>=4) F_(x,k,14,G-7);
   return k; }
@@ -184,14 +201,17 @@ function ch_coin_heaven(x) { const k=mk();
   if (x.diff>=3) W_(x,k,x.ri(21,25));
   return k; }
 
-// أشواك على الأرض مع أقواس عملات للقفز
+// أشواك على الأرض (مجموعة = صورة واحدة) مع أقواس عملات للقفز
 function ch_spikes(x) { const k=mk();
-  let c=x.ri(5,7); const n=Math.min(4,2+(x.diff>>3));
-  for (let i=0;i<n&&c<=23;i++){
-    const w=x.ri(2,3); for (let j=0;j<w;j++) k.sp.push({c:c+j,r:G-1});
+  let c=x.ri(6,8);
+  for (let i=0;i<3;i++){
+    const v=(x.spk%2)+1, w=v===1?3:4;
+    if (c+w>24) break;
+    spk(x,k,c);
     arc(k,c-1,w+2,G-2,3);
-    if (i<n-1 && x.diff>=3 && x.rand()<.5) W_(x,k,c+w+2);
-    c+=w+x.ri(4,5);
+    c+=w+x.ri(6,7);
+    if (i===0 && x.diff>=3 && x.rand()<.5) W_(x,k,c-3);
+    if (x.diff<8 && i>=1) break;
   }
   brk(k,x.ri(8,20),G-5,false);
   if (x.diff>=5) F_(x,k,x.ri(10,20),G-6);
@@ -200,7 +220,8 @@ function ch_spikes(x) { const k=mk();
 // منصة عليا آمنة فوق أرض مليئة بالأشواك
 function ch_spike_tunnel(x) { const k=mk();
   plat(k,3,G-3,25);
-  for (let c=6;c<=24;c+=5){ k.sp.push({c,r:G-1},{c:c+1,r:G-1}); }
+  let c=7;
+  while (c+4<=24){ const w=spk(x,k,c); c+=w+x.ri(3,4); }
   W_(x,k,9); W_(x,k,20);
   if (x.diff>=6) F_(x,k,12,G-6);
   brk(k,14,G-8,true);
@@ -214,7 +235,6 @@ function ch_horde(x) { const k=mk();
   if (x.diff>=5) F_(x,k,10,G-5);
   if (x.diff>=9) F_(x,k,22,G-5);
   brk(k,14,G-8,x.rand()<.4);
-  k.am.push({c:2,r:G-1});
   return k; }
 
 // كمين طيور على ارتفاعات مختلفة
@@ -263,14 +283,14 @@ function ch_zigzag(x) { const k=mk();
 // منطقة راحة: ذخيرة وقلوب بلا أعداء
 function ch_rest(x) { const k=mk();
   coinsH(k,2,13,G-1,2);
-  k.am.push({c:6,r:G-1},{c:22,r:G-1});
+  k.am.push({c:14,r:G-1});
   brk(k,10,G-5,true); brk(k,18,G-5,false);
   return k; }
 
 // ساحة الزعيم
 function ch_boss(x) { const k=mk();
   plat(k,2,G-3,5); plat(k,12,G-5,7); plat(k,23,G-3,5);
-  k.am.push({c:4,r:G-1},{c:26,r:G-1});
+  k.am.push({c:4,r:G-1});
   k.en.push({type:x.B,c:14,r:G-8,fly:true,dir:-1});
   if (x.diff>=25) k.en.push({type:x.B,c:22,r:G-8,fly:true,dir:1});
   F_(x,k,5,G-5,1); F_(x,k,24,G-5,-1);
@@ -288,7 +308,7 @@ function ch_finale(x) { const k=mk();
   return k; }
 
 const CHUNKS = {
-  open:ch_open, gap:ch_gap, mountain:ch_mountain, pillars:ch_pillars, pit:ch_pit,
+  open:ch_open, gap:ch_gap, gap_series:ch_gap_series, mountain:ch_mountain, pillars:ch_pillars, pit:ch_pit,
   crumble:ch_crumble, crumble_islands:ch_crumble_islands, spring_tower:ch_spring_tower,
   sky_islands:ch_sky_islands, coin_heaven:ch_coin_heaven, spikes:ch_spikes,
   spike_tunnel:ch_spike_tunnel, horde:ch_horde, flyers:ch_flyers, block_wall:ch_block_wall,
@@ -299,33 +319,33 @@ const CHUNKS = {
 //  أنماط المراحل (Archetypes) — كل مرحلة لها هوية مختلفة
 // ══════════════════════════════════════════════════════════════
 const ARCH = {
-  tutorial: ['open','open','gap','mountain','vault','coin_heaven'],
-  classic:  ['open','gap','mountain','horde','spikes','zigzag','pit','flyers'],
-  hills:    ['mountain','mountain','pillars','pillars','open','gap','horde','vault'],
+  tutorial: ['open','gap','gap','mountain','vault','coin_heaven'],
+  classic:  ['open','gap','gap_series','mountain','horde','spikes','zigzag','pit','flyers'],
+  hills:    ['mountain','mountain','pillars','pillars','gap','gap_series','horde','vault'],
   sky:      ['pit','pit','crumble','sky_islands','spring_tower','coin_heaven','flyers'],
-  gauntlet: ['spikes','spikes','spike_tunnel','gap','horde','pillars','zigzag'],
+  gauntlet: ['spikes','spikes','spike_tunnel','gap','gap_series','horde','pillars','zigzag'],
   bounce:   ['spring_tower','spring_tower','coin_heaven','sky_islands','open','zigzag'],
-  crumble:  ['crumble','crumble','crumble_islands','gap','horde','spikes','mountain'],
-  cave:     ['vault','block_wall','block_wall','pillars','spike_tunnel','horde','zigzag'],
-  rush:     ['horde','horde','flyers','flyers','open','pillars','gap'],
-  treasure: ['coin_heaven','coin_heaven','vault','zigzag','spring_tower','open'],
-  mix:      ['open','gap','mountain','pillars','pit','crumble','spring_tower','sky_islands',
+  crumble:  ['crumble','crumble','crumble_islands','gap','gap_series','horde','spikes','mountain'],
+  cave:     ['vault','block_wall','block_wall','pillars','spike_tunnel','gap_series','horde','zigzag'],
+  rush:     ['horde','horde','flyers','flyers','gap_series','pillars','gap'],
+  treasure: ['coin_heaven','coin_heaven','vault','zigzag','gap','spring_tower','gap_series'],
+  mix:      ['open','gap','gap_series','gap','mountain','pillars','pit','crumble','spring_tower','sky_islands',
              'coin_heaven','spikes','spike_tunnel','horde','flyers','block_wall','vault','zigzag'],
 };
 const ARCH_ROT = ['classic','hills','sky','gauntlet','bounce','crumble','cave','rush','treasure','mix'];
 
 // نكهة كل عالم (تُضاف لقائمة القطع المحتملة)
 const WORLD_BIAS = {
-  nature:    ['mountain','spring_tower','coin_heaven'],
-  graveyard: ['crumble','spikes','vault'],
+  nature:    ['mountain','spring_tower','coin_heaven','gap_series'],
+  graveyard: ['crumble','spikes','vault','gap_series'],
   winter:    ['pit','sky_islands','crumble_islands'],
-  desert:    ['pillars','spikes','horde','block_wall'],
+  desert:    ['pillars','spikes','horde','block_wall','gap_series'],
 };
 
 // أقل صعوبة تظهر عندها القطعة
-const MIN_DIFF = { crumble_islands:5, spike_tunnel:4, horde:3, flyers:2, spikes:2,
+const MIN_DIFF = { gap_series:2, crumble_islands:5, spike_tunnel:4, horde:3, flyers:2, spikes:2,
                    crumble:3, pit:3, sky_islands:3, block_wall:2 };
-const PITS = new Set(['gap','pit','crumble','crumble_islands','sky_islands']);
+const PITS = new Set(['gap','gap_series','pit','crumble','crumble_islands','sky_islands']);
 
 function planLevel(n, diff, worldIdx, theme, rand, ri) {
   const arch = diff<=2 ? 'tutorial' : ARCH_ROT[(diff + worldIdx*4) % ARCH_ROT.length];
@@ -370,20 +390,21 @@ function generateLevel(n) {
   const bossPool=[baseEt.boss].concat(extra.filter(t=>t!==baseEt.boss));
   const pick = a=>a[Math.floor(rand()*a.length)];
   const x = {
-    diff, rand, ri, theme,
+    diff, rand, ri, theme, spk:0,
     W:()=>pick(walkers), F:()=>pick(flyers),
     B: diff<=15 ? baseEt.boss : bossPool[Math.floor(diff/8)%bossPool.length],
   };
 
   const plan   = planLevel(n,diff,worldIdx,theme,rand,ri);
   const chunks = plan.seq.map(t=>(CHUNKS[t]||CHUNKS.open)(x));
-  const COLS   = 8 + chunks.reduce((s,c)=>s+c.w,0) + 8;
+  const COLS   = 8 + chunks.reduce((s,c)=>s+c.w,0) + 26;   // ذيل أطول: مكان للعلم ثم القصر
 
   const cells=[]; for(let r=0;r<ROWS;r++) cells[r]=new Int8Array(COLS);
   for(let r=GND_TOP;r<ROWS;r++) for(let c=0;c<COLS;c++) cells[r][c]=CELL.GND;
   const groundTop = new Array(COLS).fill(GND_TOP); // صف سطح الأرض لكل عمود (null = فجوة)
 
-  const platforms=[],enemies=[],coins=[],gaps=[],breakables=[],ammos=[],decos=[],spikes=[];
+  const platforms=[],enemies=[],coins=[],gaps=[],breakables=[],ammos=[],decos=[],spikeGroups=[];
+  const nearSpike = (wc,m) => spikeGroups.some(g=>wc>=g.c-(m||0) && wc<g.c+g.w+(m||0));
   const inRange = wc => wc>0 && wc<COLS-1;
   const hasBrk  = (c,r) => breakables.some(b=>b.c===c&&b.r===r);
   const place = (v,wc,r,need) => {   // يضع نابضاً/شوكة فوق سطح صلب
@@ -419,7 +440,14 @@ function generateLevel(n) {
       platforms.push({c:off+p.c,r:p.r,len:p.len});
     }
     // 5) أشواك ونوابض
-    for (const s of chunk.sp)  if (place(CELL.SPIKE, off+s.c, s.r, [CELL.GND])) spikes.push({c:off+s.c,r:s.r});
+    for (const s of chunk.sp){
+      // لا تُوضع الأشواك قرب الهوات/التلال: الإطار (الصورة) يجب أن يبقى كله فوق أرض مستوية
+      const c0=off+s.c; let ok=c0>14;
+      for (let wc=c0-2; ok && wc<=c0+s.w+1; wc++){
+        if (!inRange(wc)||groundTop[wc]!==GND_TOP||cells[GND_TOP][wc]!==CELL.GND||cells[GND_TOP-1][wc]!==CELL.AIR) ok=false;
+      }
+      if (ok && !nearSpike(c0,3) && !nearSpike(c0+s.w-1,3)) spikeGroups.push({c:c0,w:s.w,v:s.v});
+    }
     for (const s of chunk.spr) place(CELL.SPRING, off+s.c, s.r, [CELL.GND,CELL.PLT]);
     // 6) كتل الكسر
     for (const b of chunk.br){
@@ -431,10 +459,10 @@ function generateLevel(n) {
     // 7) عملات (في الهواء فقط وليس داخل كتلة)
     for (const co of chunk.co){
       const wc=off+co.c;
-      if (inRange(wc)&&co.r>=0&&cells[co.r]&&cells[co.r][wc]===CELL.AIR&&!hasBrk(wc,co.r)) coins.push({c:wc,r:co.r});
+      if (inRange(wc)&&co.r>=0&&cells[co.r]&&cells[co.r][wc]===CELL.AIR&&!hasBrk(wc,co.r)&&!(co.r>=G-2&&nearSpike(wc,0))) coins.push({c:wc,r:co.r});
     }
     // 8) ذخيرة خاصة بالقطعة
-    for (const a of chunk.am){ const wc=off+a.c; if(inRange(wc)&&cells[a.r][wc]===CELL.AIR) ammos.push({c:wc,r:a.r}); }
+    for (const a of chunk.am){ const wc=off+a.c; if(inRange(wc)&&cells[a.r][wc]===CELL.AIR&&!nearSpike(wc,2)) ammos.push({c:wc,r:a.r}); }
     // 9) الأعداء — الأرضيون يوضعون على سطح مستوٍ فعلي
     const flat = c => groundTop[c]!==null && groundTop[c-1]===groundTop[c] && groundTop[c+1]===groundTop[c] && groundTop[c+2]===groundTop[c];
     for (const e of chunk.en){
@@ -443,15 +471,15 @@ function generateLevel(n) {
       let placed=false;
       for (const d of [0,1,-1,2,-2,3,-3,4,-4]){
         const wc=off+e.c+d;
-        if (wc>3 && wc<COLS-6 && flat(wc)){ enemies.push({type:e.type,c:wc,r:groundTop[wc]-1,fly:false,dir:e.dir}); placed=true; break; }
+        if (wc>3 && wc<COLS-24 && flat(wc) && !nearSpike(wc,2)){ enemies.push({type:e.type,c:wc,r:groundTop[wc]-1,fly:false,dir:e.dir}); placed=true; break; }
       }
     }
     off+=W;
   }
 
   // ضمان 3 قلوب بالضبط: أضف كتلاً احتياطية إن قلّت
-  const flatAt = c => c>3&&c<COLS-6&&groundTop[c]!==null&&groundTop[c-1]===groundTop[c]&&groundTop[c+1]===groundTop[c];
-  for (let c=14;c<COLS-10 && breakables.length<6;c+=11){
+  const flatAt = c => c>3&&c<COLS-24&&groundTop[c]!==null&&groundTop[c-1]===groundTop[c]&&groundTop[c+1]===groundTop[c];
+  for (let c=14;c<COLS-30 && breakables.length<6;c+=11){
     for (const d of [0,1,2,3]){
       const wc=c+d; if(!flatAt(wc)) continue;
       const r=groundTop[wc]-5;
@@ -469,13 +497,13 @@ function generateLevel(n) {
   }
 
   // ذخيرة منتظمة (على سطح الأرض الفعلي)
-  for (let c=6;c<COLS-4;c+=15){
-    if (flatAt(c)&&cells[groundTop[c]-1][c]===CELL.AIR&&!ammos.some(a=>Math.abs(a.c-c)<4))
+  for (let c=18;c<COLS-30;c+=40){
+    if (flatAt(c)&&!nearSpike(c,2)&&cells[groundTop[c]-1][c]===CELL.AIR&&!ammos.some(a=>Math.abs(a.c-c)<12))
       ammos.push({c,r:groundTop[c]-1});
   }
 
   // ديكور على الأرض المستوية فقط
-  for (let c=3;c<COLS-3;c+=3){
+  for (let c=3;c<COLS-24;c+=3){
     if (rand()<0.25) continue;
     const gt=groundTop[c];
     if (gt===null||groundTop[c-1]!==gt||groundTop[c+1]!==gt) continue;
@@ -488,8 +516,9 @@ function generateLevel(n) {
     world:worldIdx+1, theme, time,
     cols:COLS, rows:ROWS, gndRow:GND_TOP,
     cells, platforms, breakables, coins, gaps, enemies, ammos, decos,
-    spikes, springs:[], traps:[],
-    goal:{c:COLS-5,r:GND_TOP-1},
+    spikeGroups, spikes:[], springs:[], traps:[],
+    goal:{c:COLS-21,r:GND_TOP-1},
+    castle:{c:COLS-9},
     startCol:1, startRow:GND_TOP-1,
     tileSet:TILE_VARIANTS[theme],
     diff, arch:plan.arch, seq:plan.seq,

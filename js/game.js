@@ -22,6 +22,29 @@ const SUPA_URL = 'https://xwkosqpxfihgprfququw.supabase.co';
 
 const SUPA_KEY = 'sb_publishable_TA1liFGVpi9Sw1HoTJz24Q_lg_3XvHv';
 
+// ── أصوات بيئية لكل عالم (بدل الموسيقى) — ملفات اختيارية في assets/sounds/ ──
+// amb_nature.ogg | amb_graveyard.ogg | amb_winter.ogg | amb_desert.ogg
+// إن لم يوجد الملف يستمر اللعب بصمت دون أي خطأ.
+const AMB = (() => {
+  const FILES = { nature:'amb_nature.ogg', graveyard:'amb_graveyard.ogg', winter:'amb_winter.ogg', desert:'amb_desert.ogg' };
+  const VOL = 0.3;
+  let el = null;
+  function stop() { if (el) { try { el.pause(); } catch (e) {} el = null; } }
+  function start(theme) {
+    stop();
+    const f = FILES[theme]; if (!f) return;
+    try { if (SFX.isMuted()) return; } catch (e) {}
+    const a = new Audio('assets/sounds/' + f);
+    a.loop = true; a.volume = VOL;
+    a.addEventListener('error', () => { if (el === a) el = null; });
+    el = a;
+    const pr = a.play(); if (pr && pr.catch) pr.catch(() => {});
+  }
+  function pause()  { if (el) try { el.pause(); } catch (e) {} }
+  function resume() { if (el) { try { if (SFX.isMuted()) return; } catch (e) {} const pr = el.play(); if (pr && pr.catch) pr.catch(() => {}); } }
+  return { start, stop, pause, resume };
+})();
+
 // ── AUDIO SYSTEM ──
 // نستخدم AudioContext + XHR للأصوات الحرجة (تشغيل فوري بلا تأخير)
 // وpool بسيط للباقي
@@ -198,6 +221,7 @@ let shopFrom = 'splash';
 
 // ── CHECKPOINT ──
 let checkpoint = { x: 0, y: 0 };      // آخر موقع آمن على الأرض
+let castle = null;                    // قصر نهاية المرحلة {c} أو null
 let reviveCheckpoint = { x: 0, y: 0 }; // موقع الموت لاستعادة الشخصية
 
 // ── LEVEL DATA ──
@@ -222,6 +246,80 @@ const TILE_IMGS = {};  // TILE_IMGS['nature'][1] = Image
 const OBJ_IMGS  = {};  // OBJ_IMGS['nature']['Tree_1.png'] = Image
 const UI_IMGS   = {};  // UI_IMGS.splash = Image
 let allLoaded = false;
+
+// ══════════════════════════════════════════════════════
+//  PROPS — صور القصور والأشواك والنوابض (مجلد assets/props/)
+//  تُحمَّل هنا مباشرة؛ وإن غاب أي ملف تُرسم بدائل برمجية
+// ══════════════════════════════════════════════════════
+const PROPS_DIR = 'assets/props/';
+const PROPS = {};
+const PROP_FILES = [
+  'Palace nature.png','Palace Cemetery.png','Ice Palace.png','Palace desert.png',
+  'Plant thorns1.png','Plant thorns2.png','ThornsGraveyard1.png','ThornsGraveyard2.png',
+  'Ice Thorns1.png','Ice Thorns2.png','Desert Thorns1.png','Desert Thorns2.png',
+  'nabid1.png','nabid2.png','nabid3.png','nabid4.png',
+];
+function loadProps() {
+  for (const f of PROP_FILES) {
+    if (PROPS[f]) continue;
+    const img = new Image();
+    img.src = PROPS_DIR + encodeURIComponent(f);
+    PROPS[f] = img;
+  }
+}
+loadProps();
+
+// القصر: ملف الصورة لكل عالم + موضع الباب داخل الصورة (نسب من 0 إلى 1)
+//  doorX: مركز الباب أفقياً | doorH: ارتفاع الباب | base: كم يُغرَس أسفل الصورة في الأرض
+const CASTLE = {
+  nature:    { file:'Palace nature.png',   doorX:0.51,  doorH:0.26, base:0.09  },
+  graveyard: { file:'Palace Cemetery.png', doorX:0.506, doorH:0.28, base:0.08  },
+  winter:    { file:'Ice Palace.png',      doorX:0.50,  doorH:0.26, base:0.08  },
+  desert:    { file:'Palace desert.png',   doorX:0.52,  doorH:0.25, base:0.145 },
+};
+// الأشواك: صورتان لكل عالم (1 و 2) + أبعادها الأصلية لحساب النسبة
+const SPIKE_IMG = {
+  nature:    ['Plant thorns1.png','Plant thorns2.png'],
+  graveyard: ['ThornsGraveyard1.png','ThornsGraveyard2.png'],
+  winter:    ['Ice Thorns1.png','Ice Thorns2.png'],
+  desert:    ['Desert Thorns1.png','Desert Thorns2.png'],
+};
+const SPIKE_ASPECT = {
+  'Plant thorns1.png':270/138,  'Plant thorns2.png':473/204,
+  'ThornsGraveyard1.png':319/178,'ThornsGraveyard2.png':514/177,
+  'Ice Thorns1.png':319/215,    'Ice Thorns2.png':516/211,
+  'Desert Thorns1.png':319/179, 'Desert Thorns2.png':516/166,
+};
+// النابض: إطارات الحركة من الانضغاط إلى الامتداد (الباقي نسخ مكررة)
+const SPRING_FRAMES = ['nabid4.png','nabid3.png','nabid2.png','nabid1.png'];
+const SPRING_REST   = 'nabid1.png';
+const _trimCache = {};
+// يقصّ الحواف الشفافة ويقيس عرض القاعدة ليبقى حجم النابض ثابتاً بين الإطارات
+function springSprite(file) {
+  if (_trimCache[file]) return _trimCache[file];
+  const img = PROPS[file];
+  if (!imgOK(img)) return null;
+  let bb = { x:0, y:0, w:img.naturalWidth, h:img.naturalHeight }, baseW = bb.w;
+  try {
+    const cv = document.createElement('canvas');
+    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    const cx = cv.getContext('2d'); cx.drawImage(img, 0, 0);
+    const d = cx.getImageData(0, 0, cv.width, cv.height).data;
+    let x0 = cv.width, x1 = -1, y0 = cv.height, y1 = -1;
+    for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
+      if (d[(y*cv.width + x)*4 + 3] > 24) { if (x<x0)x0=x; if (x>x1)x1=x; if (y<y0)y0=y; if (y>y1)y1=y; }
+    }
+    if (x1 >= 0) {
+      bb = { x:x0, y:y0, w:x1-x0+1, h:y1-y0+1 };
+      // عرض القاعدة = عرض الصف المعتم عند 8% فوق أسفل الصورة
+      const ry = Math.max(y0, y1 - Math.round(bb.h * 0.08));
+      let a = cv.width, b = -1;
+      for (let x = 0; x < cv.width; x++) if (d[(ry*cv.width + x)*4 + 3] > 24) { if (x<a)a=x; if (x>b)b=x; }
+      if (b > a) baseW = b - a + 1;
+    }
+  } catch (e) { /* ملفات محلية: نكتفي بالمقاييس التقريبية */ }
+  return (_trimCache[file] = { img, bb, baseW });
+}
 
 // ── SETUP ROTATION (portrait device → landscape game) ──
 function setupRotation() {
@@ -604,7 +702,7 @@ function showScreen(id) {
   // إيقاف الأصوات عند الخروج من المرحلة
   const wasInGame = document.getElementById('gameScreen')?.classList.contains('active');
   const leavingGame = wasInGame && !['gameScreen','winScreen','loseScreen'].includes(id);
-  if (leavingGame) { try { SFX.stopAll(); } catch(e){} }
+  if (leavingGame) { try { SFX.stopAll(); } catch(e){} try { AMB.stop(); } catch(e){} }
 
   mains.forEach(s => { const el = document.getElementById(s); if(el) el.classList.remove('active'); });
   subs.forEach(s => { const el = document.getElementById(s); if(el) el.classList.remove('active'); });
@@ -752,6 +850,7 @@ function startLevel(n) {
   startTimer(ld.time);
   updHUD(); updAmmo();
   showScreen('gameScreen');
+  AMB.start(ld.theme);
 
   cancelAnimationFrame(raf);
   lastT = performance.now();
@@ -782,7 +881,8 @@ function buildWorld(ld) {
       } else if (v === T.SPIKE) {
         pickups.push({ x:x+2, y:y+Math.round(TS*0.35), w:TS-4, h:Math.round(TS*0.65), type:'spike', done:false });
       } else if (v === T.SPRING) {
-        pickups.push({ x:x+2, y:y+Math.round(TS*0.6), w:TS-4, h:Math.round(TS*0.4), type:'spring', done:false });
+        pickups.push({ x:x+2, y:y+Math.round(TS*0.6), w:TS-4, h:Math.round(TS*0.4), type:'spring', done:false,
+                       tileX:x, tileBottom:y+TS, animT:-1, cool:0 });
       } else if (v === T.CRUMBLE) {
         const ct = { x, y, w:TS, h:TS, type:T.GND, row:r, col:c, crumble:true, crumbleT:0, crumbling:false };
         solidTiles.push(ct);
@@ -808,8 +908,19 @@ function buildWorld(ld) {
     pickups.push({ x:ax, y:ay, w:ammoSz, h:ammoSz, type:'ammo', done:false });
   }
 
+  // Spike groups — صورة واحدة لكل مجموعة (النوع 1 أو 2 بالتناوب) + صندوق تصادم أصغر من الصورة
+  for (const sg of (ld.spikeGroups || [])) {
+    const file = (SPIKE_IMG[ld.theme] || SPIKE_IMG.nature)[(sg.v || 1) - 1];
+    const asp  = SPIKE_ASPECT[file] || 2;
+    const dw = sg.w * TS, dh = dw / asp, dx = sg.c * TS, gy = gndRow * TS;
+    const hw = dw * 0.48, hh = dh * 0.5;
+    pickups.push({ x: dx + (dw - hw) / 2, y: gy - hh, w: hw, h: hh, type:'spike', done:false,
+                   file, dx, dy: gy - dh + 3, dw, dh });
+  }
+
   // Goal flag (always visible at end)
   pickups.push({ x:goal.c*TS, y:(goal.r-1)*TS, w:TS, h:TS*2, type:'goal', done:false });
+  castle = ld.castle ? { c: ld.castle.c } : null;
 
   // Enemies - تقليل 25% + إصلاح الطيران
   const filteredEnemies = enDefs.filter((e, i) => {
@@ -887,7 +998,10 @@ function loop(ts) {
   const rawDt = (ts - lastT) / 16.67;
   const dt = (rawDt > 5 || lastT === 0) ? 1 : Math.min(rawDt, 3);
   lastT = ts;
-  if (!paused && gameStatus === 'playing') update(dt);
+  if (!paused) {
+    if (gameStatus === 'playing') update(dt);
+    else if (gameStatus === 'winwalk') updWinWalk(dt);
+  }
   render();
   raf = requestAnimationFrame(loop);
 }
@@ -959,8 +1073,7 @@ function updPlayer(dt) {
 
   // حفظ checkpoint عند الوقوف على الأرض الصلبة (ليس فوق فجوة)
   if (player.onGnd && !player.dead) {
-    checkpoint.x = player.x;
-    checkpoint.y = player.y;
+    if (isSafeSpot()) { checkpoint.x = player.x; checkpoint.y = player.y; }
     player._gapEnabled = true; // تفعيل كشف الفجوة بعد أول لمسة للأرض
     // صوت الهبوط عند الوصول للأرض (فقط إذا كان يسقط بسرعة)
     if (player._wasAirborne && player._prevVy > 3) {
@@ -1023,6 +1136,26 @@ function updPlayer(dt) {
     const maxF = animCounts[player.state] || 10;
     player.frame = (player.frame + 1) % maxF;
   }
+}
+
+// موقع آمن للعودة: أرض دائمة (ليست بلاطة تنهار ولا حافة هوة) وبعيداً عن الأشواك
+function isSafeSpot() {
+  const ld = LEVELS[GS.curLevel];
+  if (!ld || !ld.cells) return true;
+  const fr = Math.floor((player.y + player.h + 2) / TS);
+  if (fr < 0 || fr >= ld.rows) return false;
+  const c0 = Math.floor((player.x + 6) / TS) - 1;
+  const c1 = Math.floor((player.x + player.w - 6) / TS) + 1;
+  for (let c = c0; c <= c1; c++) {
+    if (c < 0 || c >= ld.cols) return false;
+    const v = ld.cells[fr][c];
+    if (v !== T.GND && v !== T.PLT) return false;
+  }
+  const mid = player.x + player.w / 2;
+  for (const p of pickups) {
+    if (p.type === 'spike' && !p.done && Math.abs(p.x + p.w / 2 - mid) < TS * 6) return false;
+  }
+  return true;
 }
 
 function collideX(obj) {
@@ -1127,6 +1260,7 @@ function spawnBreakParticles(x, y, theme) {
 // ── CHECK PICKUPS ──
 function checkPickups() {
   if (player.dead) return;
+  for (const p of pickups) if (p.type === 'spring') { if (p.cool > 0) p.cool--; if (p.animT >= 0) p.animT++; }
 
   for (const p of pickups) {
     if (p.done) continue;
@@ -1149,7 +1283,9 @@ function checkPickups() {
     } else if (p.type === 'spike') {
       if (!player.inv) { killPlayer('Hit a spike!'); return; }
     } else if (p.type === 'spring') {
-      // Spring - bounce
+      // Spring - bounce (مع فترة تهدئة حتى لا يتكرر الصوت في كل إطار)
+      if (p.cool > 0) continue;
+      p.cool = 18; p.animT = 0;
       player.vy = JSPD * 1.4;
       player.onGnd = false;
       SFX.play('spring');
@@ -1328,13 +1464,11 @@ function updBullets(dt) {
     const br = { x: b.x - 8, y: b.y - 5, w: 16, h: 10 };
 
     let hit = false;
-    // Check ALL solid tiles - breakable ones get destroyed
+    // الطلقة تمرّ فوق الأرض والمنصات؛ تتوقف فقط عند الكتل القابلة للكسر
     for (let ti = solidTiles.length - 1; ti >= 0; ti--) {
       const t = solidTiles[ti];
-      if (overlaps(br, t)) {
-        if (t.isBreakable) {
-          breakBlock(t);
-        }
+      if (t.isBreakable && overlaps(br, t)) {
+        breakBlock(t);
         hit = true;
         break;
       }
@@ -1391,7 +1525,11 @@ function updCamera() {
   const ld = LEVELS[GS.curLevel];
   const mapW = ld.cols * TS, mapH = ld.rows * TS;
   camera.x = Math.max(0, Math.min(player.x - W * 0.35, mapW - W));
-  camera.y = 0; // اللعبة أفقية فقط — بدون تمرير عمودي
+  // بدون تمرير عمودي، إلا عند الاقتراب من القصر: ننزل الكاميرا ليظهر كاملاً
+  let ty = 0;
+  if (castle && player.x > (ld.goal.c - 16) * TS) ty = Math.min(0, ld.gndRow * TS - (H - 34));
+  camera.y += (ty - camera.y) * 0.06;
+  if (Math.abs(ty - camera.y) < 0.5) camera.y = ty;
 }
 
 // ── RENDER ──
@@ -1460,8 +1598,8 @@ function drawPits() {
   const theme    = ld.theme || 'nature';
   const bgImg    = UI_IMGS['bg_' + theme];
   const mapH     = ld.rows * TS;
-  const pitTop   = ld.gndRow * TS;
-  const pitH     = mapH - pitTop + TS * 4;
+  const pitTop   = ld.gndRow * TS - camera.y;   // يتبع الكاميرا عند نزولها قرب القصر
+  const pitH     = mapH - ld.gndRow * TS + TS * 4;
 
   const W = parseInt(canvas.style.width)  || canvas.width;
   const H = parseInt(canvas.style.height) || canvas.height;
@@ -1719,32 +1857,86 @@ function drawPickups() {
       ctx.arc(px + p.w/2, py + p.h * 0.82, 10, 0, Math.PI*2);
       ctx.fill();
     } else if (p.type === 'spike') {
-      ctx.fillStyle = '#FF1744';
-      ctx.beginPath();
-      ctx.moveTo(px, py + p.h);
-      ctx.lineTo(px + p.w/2, py);
-      ctx.lineTo(px + p.w, py + p.h);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = 'rgba(255,100,100,0.3)';
-      ctx.beginPath();
-      ctx.moveTo(px + p.w*0.2, py + p.h);
-      ctx.lineTo(px + p.w*0.45, py + p.h*0.3);
-      ctx.lineTo(px + p.w*0.7, py + p.h);
-      ctx.closePath(); ctx.fill();
+      const sImg = PROPS[p.file];
+      if (p.dw && imgOK(sImg)) {
+        ctx.drawImage(sImg, p.dx, p.dy, p.dw, p.dh);
+      } else {
+        // بديل برمجي إن لم تُحمَّل الصورة
+        ctx.fillStyle = '#FF1744';
+        const n = Math.max(1, Math.round((p.dw || p.w) / TS));
+        const x0 = p.dx !== undefined ? p.dx : px, tw = (p.dw || p.w) / n;
+        for (let k = 0; k < n; k++) {
+          ctx.beginPath();
+          ctx.moveTo(x0 + k * tw, p.y + p.h);
+          ctx.lineTo(x0 + k * tw + tw / 2, p.y - p.h * 0.3);
+          ctx.lineTo(x0 + (k + 1) * tw, p.y + p.h);
+          ctx.closePath(); ctx.fill();
+        }
+      }
     } else if (p.type === 'spring') {
-      ctx.fillStyle = '#4CAF50';
-      ctx.fillRect(px, py, p.w, p.h);
-      ctx.fillStyle = '#8BC34A';
-      ctx.fillRect(px + 2, py, p.w - 4, p.h/2);
+      drawSpring(p);
     } else if (p.type === 'breakable') {
       // Already rendered in drawTiles via solidTiles
     }
   }
 }
 
+// ── SPRING (صورة مخصصة + حركة انضغاط/امتداد) ──
+function drawSpring(p) {
+  let file = SPRING_REST;
+  if (p.animT >= 0) {
+    const idx = Math.floor(p.animT / 3);
+    if (idx < SPRING_FRAMES.length) file = SPRING_FRAMES[idx]; else p.animT = -1;
+  }
+  const sp = springSprite(file);
+  if (!sp) {
+    ctx.fillStyle = '#4CAF50'; ctx.fillRect(p.x, p.y, p.w, p.h);
+    ctx.fillStyle = '#8BC34A'; ctx.fillRect(p.x + 2, p.y, p.w - 4, p.h / 2);
+    return;
+  }
+  const sc = (TS * 1.15) / sp.baseW;
+  const dw = sp.bb.w * sc, dh = sp.bb.h * sc;
+  ctx.drawImage(sp.img, sp.bb.x, sp.bb.y, sp.bb.w, sp.bb.h,
+                p.tileX + TS / 2 - dw / 2, p.tileBottom - dh + 2, dw, dh);
+}
+
+// ── CASTLE ──
+// الباب بحجم الشخصية تقريباً (100px) ما دامت الشاشة تتسع، وإلا يُصغَّر ليبقى القصر كاملاً
+function castleMetrics() {
+  if (!castle) return null;
+  const ld = LEVELS[GS.curLevel];
+  const cfg = CASTLE[ld.theme] || CASTLE.nature;
+  const img = PROPS[cfg.file];
+  const H = parseInt(canvas.style.height) || canvas.height;
+  const asp = imgOK(img) ? img.naturalWidth / img.naturalHeight : 1.5;
+  const ch = Math.min(100 / cfg.doorH, H - 38);
+  const cw = ch * asp;
+  const gy = ld.gndRow * TS;
+  const doorX = castle.c * TS + TS / 2;
+  return { cfg, img, ch, cw, doorX, x: doorX - cw * cfg.doorX, y: gy + ch * cfg.base - ch, gy };
+}
+function drawCastle() {
+  const m = castleMetrics();
+  if (!m) return;
+  const W = parseInt(canvas.style.width) || canvas.width;
+  if (m.x - camera.x > W || m.x + m.cw - camera.x < 0) return;
+  if (imgOK(m.img)) {
+    ctx.drawImage(m.img, m.x, m.y, m.cw, m.ch);
+  } else {
+    // بديل برمجي بسيط
+    ctx.fillStyle = '#8D6E63'; ctx.fillRect(m.x + m.cw * 0.2, m.y + m.ch * 0.35, m.cw * 0.6, m.ch * 0.65);
+    ctx.fillStyle = '#6D4C41'; ctx.fillRect(m.x + m.cw * 0.12, m.y + m.ch * 0.2, m.cw * 0.14, m.ch * 0.8);
+    ctx.fillRect(m.x + m.cw * 0.74, m.y + m.ch * 0.2, m.cw * 0.14, m.ch * 0.8);
+    ctx.fillStyle = '#212121';
+    const dh = m.ch * m.cfg.doorH, dw = dh * 0.6;
+    ctx.fillRect(m.doorX - dw / 2, m.gy - dh, dw, dh);
+  }
+}
+
 // ── DRAW DECORATIVE OBJECTS ──
 // الديكور يُرسم في إحداثيات العالم (world coords) داخل ctx.save/translate
 function drawDecos() {
+  drawCastle();
   const decos = window._decos || [];
   const ld    = LEVELS[GS.curLevel];
   const theme = ld?.theme || 'nature';
@@ -1864,6 +2056,13 @@ function drawBullets() {
 
 // ── DRAW PLAYER ──
 function drawPlayer() {
+  if (player.alpha !== undefined && player.alpha < 1) {
+    ctx.save(); ctx.globalAlpha = Math.max(0, player.alpha);
+    _drawPlayerInner();
+    ctx.restore();
+  } else _drawPlayerInner();
+}
+function _drawPlayerInner() {
   // Invincibility blink
   if (player.inv && Math.floor(player.invT / 5) % 2 === 0) return;
 
@@ -1926,7 +2125,7 @@ function spawnHeartPopup(screenX, screenY) {
   el.className = 'heart-popup';
   el.textContent = '❤️ +1';
   el.style.left = (screenX + camera.x) + 'px';
-  el.style.top  = (screenY + camera.y) + 'px';
+  el.style.top  = (screenY - camera.y) + 'px';
   wrapper.appendChild(el);
   setTimeout(() => el.remove(), 1000);
 }
@@ -1935,7 +2134,7 @@ function spawnCoinParticle(screenX, screenY) {
   const el = document.createElement('div');
   el.className = 'coin-popup';
   el.textContent = '+50';
-  el.style.cssText = `position:absolute;left:${screenX+camera.x}px;top:${screenY+camera.y}px;color:#FFD700;font-size:16px;font-weight:900;pointer-events:none;z-index:30;animation:coinPop .8s ease-out forwards;`;
+  el.style.cssText = `position:absolute;left:${screenX+camera.x}px;top:${screenY-camera.y}px;color:#FFD700;font-size:16px;font-weight:900;pointer-events:none;z-index:30;animation:coinPop .8s ease-out forwards;`;
   wrapper.appendChild(el);
   setTimeout(() => el.remove(), 800);
 }
@@ -2025,10 +2224,67 @@ function startTimer(sec) {
 }
 
 // ── WIN / LOSE ──
+// لمس العلم: إن وُجد قصر تمشي الشخصية تلقائياً نحو الباب وتختفي أمامه، ثم تظهر شاشة الفوز
 function triggerWin() {
   if (gameStatus !== 'playing') return;
-  gameStatus = 'win';
+  if (castle) { startWinWalk(); return; }
+  finishWin(true);
+}
+
+function startWinWalk() {
+  gameStatus = 'winwalk';
   SFX.play('arrival');
+  clearInterval(timerInt);
+  try { AMB.stop(); } catch (e) {}
+  bullets = [];
+  player.inv = false; player.invT = 0;
+  player.dead = false;
+  player.alpha = 1;
+  player.fading = false;
+  keys.left = false; keys.right = false;
+}
+
+function updWinWalk(dt) {
+  const m = castleMetrics();
+  const doorX = m ? m.doorX : player.x + 400;
+  const cx = player.x + player.w / 2;
+  const spd = PSPD * 0.85;
+
+  if (cx >= doorX - 10) player.fading = true;
+  player.dir = 1;
+  player.vx = player.fading ? spd * 0.5 : spd;
+  player.state = player.onGnd ? 'run' : 'jump';
+
+  player.x += player.vx * dt;
+  collideX(player);
+  player.vy += GRAV * dt;
+  if (player.vy > MAX_VY) player.vy = MAX_VY;
+  player._prevY = player.y;
+  player.y += player.vy * dt;
+  player.onGnd = false;
+  collideY(player);
+
+  // حركة الإطارات
+  const animRates = { idle:10, run:5, jump:8 };
+  const animCounts = { idle:10, run:8, jump:10 };
+  player.ft += dt;
+  if (player.ft >= (animRates[player.state] || 10)) {
+    player.ft = 0;
+    player.frame = (player.frame + 1) % (animCounts[player.state] || 10);
+  }
+
+  if (player.fading) {
+    player.alpha -= 0.035 * dt;
+    if (player.alpha <= 0) { player.alpha = 0; finishWin(false); return; }
+  }
+  updParticles(dt);
+  updCamera();
+}
+
+function finishWin(playArrival) {
+  gameStatus = 'win';
+  try { AMB.stop(); } catch (e) {}
+  if (playArrival) SFX.play('arrival');
   SFX.play('win');
   clearInterval(timerInt);
   cancelAnimationFrame(raf);
@@ -2052,6 +2308,7 @@ function triggerWin() {
 function triggerLose(reason) {
   if (gameStatus === 'lose') return;
   gameStatus = 'lose';
+  AMB.stop();
   SFX.play('lose');
   clearInterval(timerInt);
   document.getElementById('loseReason').textContent = reason || 'Try again!';
@@ -2133,12 +2390,14 @@ function backToLevels() {
 // ── PAUSE ──
 function pauseGame() {
   paused = true;
+  AMB.pause();
   clearInterval(timerInt);
   document.getElementById('pauseOv').classList.add('show');
 }
 
 function resumeGame() {
   paused = false;
+  AMB.resume();
   document.getElementById('pauseOv').classList.remove('show');
   lastT = performance.now();
   if (player && !player.dead) { player.inv = true; player.invT = 90; }
