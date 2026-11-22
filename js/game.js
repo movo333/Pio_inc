@@ -576,7 +576,43 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
+const BUILD_ID = 'login-v3';
+
+// ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
+function _ensureLoginUI() {
+  const splash = document.getElementById('splash');
+  if (splash && !document.getElementById('btnPiLoginSplash')) {
+    const b = document.createElement('button');
+    b.id = 'btnPiLoginSplash';
+    b.className = 'pi-btn';
+    b.textContent = '🔐 Login with Pi';
+    b.style.cssText = 'position:absolute;top:16px;left:14px;z-index:5;padding:7px 14px;font-size:11px;letter-spacing:0;display:none;';
+    b.onclick = () => piAuth({ stay: true });
+    splash.appendChild(b);
+  }
+  const login = document.getElementById('piLogin');
+  if (login && !document.getElementById('piLoginMsg')) {
+    const m = document.createElement('div');
+    m.id = 'piLoginMsg';
+    m.style.cssText = 'display:none;margin-top:16px;max-width:300px;padding:10px 12px;background:rgba(120,0,0,0.5);border:1px solid #ff6b6b;border-radius:10px;font-size:11px;color:#ffd0d0;text-align:center;line-height:1.5;white-space:pre-wrap;word-break:break-word;';
+    login.appendChild(m);
+  }
+  if (!document.getElementById('buildInfo')) {
+    const i = document.createElement('div');
+    i.id = 'buildInfo';
+    i.style.cssText = 'position:fixed;bottom:3px;left:6px;font-size:9px;color:#888;z-index:10000;pointer-events:none;';
+    document.body.appendChild(i);
+  }
+}
+
+function _updateBuildInfo() {
+  const i = document.getElementById('buildInfo');
+  if (i) i.textContent = BUILD_ID + ' · SDK:' + (typeof Pi !== 'undefined' ? 'ok' : 'missing') + ' · sandbox:' + _inPiSandbox();
+}
+
 function _updatePiUI() {
+  _ensureLoginUI();
+  _updateBuildInfo();
   const badge = document.getElementById('piUserBadge');
   const btn   = document.getElementById('btnPiLoginSplash');
   if (badge) {
@@ -2724,7 +2760,7 @@ async function _boot() {
   const lbg = document.getElementById('loadBG');
 
   ldProgress(5, 'Starting...');
-  _loadPiSdk();                       // في الخلفية — لا ننتظره
+  _loadPiSdk().then(() => { try { _updateBuildInfo(); } catch(e) {} });   // في الخلفية — لا ننتظره
 
   // ── تحميل كل الأصول؛ لا تبدأ اللعبة قبل اكتمالها ──
   ldProgress(10, 'Loading assets... 0%');
@@ -2756,6 +2792,7 @@ async function _boot() {
   await new Promise(r => setTimeout(r, 400));
 
   // الدخول عبر Pi Network (أو اللعب كضيف)
+  _updatePiUI();
   showScreen('piLogin');
   _saveAssetsOnDevice();
 }
