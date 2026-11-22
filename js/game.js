@@ -525,16 +525,38 @@ let   _piAccessToken = null;
 const PI_REWARDS = {
   coins:  () => { GS.coins += 1000; updHUD(); },
   speed:  () => { GS.speedBoost = true; updHUD(); },
-  worlds: () => { GS.allWorlds = true; buildWorldGrid(); },
+  hearts: () => { GS.lives = Math.min(99, GS.lives + 5); updHUD(); },       // 0.2π
+  level:  () => { unlockNextLevel(); },                                      // 0.2π — المرحلة التالية فقط
+  world:  () => { unlockNextWorld(); },                                      // 0.5π — العالم التالي فقط
+  worlds: () => { GS.allWorlds = true; buildWorldGrid(); },                  // قديم (للدفعات المعلّقة فقط)
   mega:   () => { GS.allWorlds = true; GS.coins += 1000; updHUD(); buildWorldGrid(); },
 };
 
 const PI_MEMOS = {
   coins:  'Super Cowboy: 1000 Coins',
   speed:  'Super Cowboy: Speed Boost',
+  hearts: 'Super Cowboy: 5 Hearts',
+  level:  'Super Cowboy: Unlock Next Level',
+  world:  'Super Cowboy: Unlock Next World',
   worlds: 'Super Cowboy: Unlock All Worlds',
   mega:   'Super Cowboy: Mega Bundle (All Worlds + 1000 Coins)',
 };
+
+// فتح المرحلة التالية فقط (+1)
+function unlockNextLevel() {
+  if (GS.maxUnlocked < 100) GS.maxUnlocked++;
+  _refreshUnlockUI();
+}
+// فتح العالم التالي فقط: أول مرحلة في أقرب عالم مقفل (العوالم التي بعده تبقى مقفلة)
+function unlockNextWorld() {
+  const w = WORLDS.find(w => w.minLevel > GS.maxUnlocked);
+  if (w) GS.maxUnlocked = w.minLevel;
+  _refreshUnlockUI();
+}
+function _refreshUnlockUI() {
+  try { buildWorldGrid(); } catch (e) {}
+  try { if (typeof selectedWorld !== 'undefined' && selectedWorld) buildLevelGrid(selectedWorld); } catch (e) {}
+}
 
 function _applyPiReward(item) {
   const fn = PI_REWARDS[item];
@@ -556,7 +578,7 @@ function onIncompletePaymentFound(payment) {
 // ── تسجيل الدخول بـ Pi ──
 async function piAuth() {
   try {
-    if (typeof Pi === 'undefined') { alert('Please open the game in Pi Browser.'); playGuest(); return; }
+    if (typeof Pi === 'undefined') { alert(i18n('openPi')); playGuest(); return; }
     const auth = await Pi.authenticate(['username', 'payments'], onIncompletePaymentFound);
     _piAccessToken = auth.accessToken;
     GS.piUser = auth.user;
@@ -613,17 +635,20 @@ async function _piCompletePayment(paymentId, txid, onSuccess) {
     if (onSuccess) onSuccess();
     return true;
   }
-  alert('⚠️ Payment received but not confirmed yet.\nReopen the game to finish it — you will not be charged twice.');
+  alert(i18n('notConf'));
   return false;
 }
 
 // ── الشراء من المتجر (Pi الحقيقي) ──
 async function buy(item, amount) {
   if (!GS.piUser) {
-    alert('🔐 Please login with Pi Network to purchase!');
+    alert(i18n('loginBuy'));
     return;
   }
   if (!PI_REWARDS[item]) { alert('Unknown item'); return; }
+  // لا ندفع مقابل شيء مفتوح أصلاً
+  if ((item === 'world' && !WORLDS.some(w => w.minLevel > GS.maxUnlocked)) ||
+      (item === 'level' && GS.maxUnlocked >= 100)) { alert(i18n('nothing')); return; }
 
   const paymentData = {
     amount,
@@ -639,7 +664,7 @@ async function buy(item, amount) {
     onReadyForServerCompletion: async (paymentId, txid) => {
       console.log('[Pi] onReadyForServerCompletion:', paymentId, txid);
       const ok = await _piCompletePayment(paymentId, txid, () => _applyPiReward(item));
-      if (ok) alert('✅ Purchase successful! Enjoy your ' + (PI_MEMOS[item] || item) + '!');
+      if (ok) alert(i18n('buyOk'));
     },
     onCancel: (paymentId) => {
       console.log('[Pi] Cancelled:', paymentId);
@@ -648,7 +673,7 @@ async function buy(item, amount) {
     onError: (err, payment) => {
       console.error('[Pi] Error:', err, payment);
       if (payment && payment.identifier) _piCancelPayment(payment.identifier);
-      alert('❌ Payment error. Please try again.');
+      alert(i18n('payErr'));
     },
   };
 
@@ -656,7 +681,7 @@ async function buy(item, amount) {
     Pi.createPayment(paymentData, paymentCallbacks);
   } catch(e) {
     console.error('[Pi] createPayment failed:', e);
-    alert('❌ Could not start payment. Make sure you are in Pi Browser.');
+    alert(i18n('openPi'));
   }
 }
 
@@ -770,10 +795,10 @@ function buildWorldGrid() {
 
     const nameEl = document.createElement('div');
     nameEl.className = 'world-name';
-    nameEl.textContent = w.name;
+    nameEl.textContent = i18n('w' + w.id);
     const progEl = document.createElement('div');
     progEl.className = 'world-prog';
-    progEl.textContent = unlocked ? `${done}/10` : 'Locked';
+    progEl.textContent = unlocked ? `${done}/10` : '🔒';
 
     card.appendChild(imgEl);
     card.appendChild(nameEl);
@@ -789,7 +814,7 @@ let selectedWorld = 1;
 function showLevelSelect(wid) {
   selectedWorld = wid;
   const w = WORLDS[wid - 1];
-  document.getElementById('lvlSelTitle').textContent = w.name.toUpperCase() + ' WORLD';
+  document.getElementById('lvlSelTitle').textContent = i18n('w' + w.id).toUpperCase();
 
   // Set background
   const bg = document.getElementById('levelBG');
@@ -1281,7 +1306,7 @@ function checkPickups() {
       triggerWin();
       return;
     } else if (p.type === 'spike') {
-      if (!player.inv) { killPlayer('Hit a spike!'); return; }
+      if (!player.inv) { spikeDeath(); return; }
     } else if (p.type === 'spring') {
       // Spring - bounce (مع فترة تهدئة حتى لا يتكرر الصوت في كل إطار)
       if (p.cool > 0) continue;
@@ -1322,7 +1347,16 @@ function hurtPlayer() {
   GS.lives = Math.max(0, GS.lives - 1); // لا تنخفض تحت الصفر أبداً
   updHUD();
   saveLocal();
-  if (GS.lives <= 0) { killPlayer('No lives left!'); }
+  if (GS.lives <= 0) { killPlayer('Out of lives!'); }
+}
+
+// موت الأشواك: يخصم قلباً ويشغّل صوت الموت (لو بقيت قلوب يعود اللاعب لآخر نقطة)
+function spikeDeath() {
+  if (player.dead) return;
+  GS.lives = Math.max(0, GS.lives - 1);
+  updHUD(); saveLocal();
+  SFX.play(GS.lives > 0 ? 'lose' : 'hurt');   // عند 0 قلوب يُشغَّل صوت الخسارة من شاشة النهاية
+  killPlayer(GS.lives > 0 ? 'Hit a spike!' : 'Out of lives!');
 }
 
 function killPlayer(reason) {
@@ -2300,7 +2334,7 @@ function finishWin(playArrival) {
 
   const pct = lvTimer / (LEVELS[GS.curLevel].time || 120);
   document.getElementById('winStars').textContent = pct > 0.6 ? '⭐⭐⭐' : pct > 0.3 ? '⭐⭐' : '⭐';
-  document.getElementById('winScore').textContent = `Score: ${lvScore}  |  Coins: ${lvCoins}`;
+  document.getElementById('winScore').textContent = `⭐ ${lvScore}  |  🪙 ${lvCoins}`;
 
   setTimeout(() => showScreen('winScreen'), 500);
 }
@@ -2311,7 +2345,7 @@ function triggerLose(reason) {
   AMB.stop();
   SFX.play('lose');
   clearInterval(timerInt);
-  document.getElementById('loseReason').textContent = reason || 'Try again!';
+  document.getElementById('loseReason').textContent = (reason ? i18nText(reason) : '🔁');
   setTimeout(() => {
     cancelAnimationFrame(raf);
     showScreen('loseScreen');
@@ -2339,10 +2373,10 @@ function revivePlayer() {
     const btn = document.getElementById('reviveBtn');
     if (btn) {
       btn.style.background = '#FF4444';
-      btn.querySelector('span').textContent = 'Need 100🪙!';
+      btn.querySelector('span').textContent = '🪙 100 ✖';
       setTimeout(() => {
         btn.style.background = '';
-        btn.querySelector('span').textContent = 'Revive 100🪙';
+        btn.querySelector('span').textContent = i18n('revive');
       }, 1200);
     }
     SFX.play('hurt');
@@ -2390,6 +2424,7 @@ function backToLevels() {
 // ── PAUSE ──
 function pauseGame() {
   paused = true;
+  keys.left = false; keys.right = false;   // لا يستمر اللاعب بالجري أثناء/بعد الإيقاف
   AMB.pause();
   clearInterval(timerInt);
   document.getElementById('pauseOv').classList.add('show');
@@ -2399,8 +2434,8 @@ function resumeGame() {
   paused = false;
   AMB.resume();
   document.getElementById('pauseOv').classList.remove('show');
-  lastT = performance.now();
-  if (player && !player.dead) { player.inv = true; player.invT = 90; }
+  lastT = 0;
+  if (player && !player.dead) { player.inv = true; player.invT = 180; }
   startTimer(lvTimer);
 }
 
@@ -2457,7 +2492,7 @@ async function _loadLeaderboard(tab) {
   if (!body) return;
 
   // شاشة تحميل
-  body.innerHTML = '<div class="lb-loading"><div class="lb-spinner"></div><span>Loading...</span></div>';
+  body.innerHTML = '<div class="lb-loading"><div class="lb-spinner"></div><span>' + i18n('loading0') + '</span></div>';
 
   // عمود الترتيب حسب التبويب
   const orderCol = tab === 'level' ? 'max_level' : 'coins';
@@ -2497,7 +2532,7 @@ async function _loadLeaderboard(tab) {
     const rows = await res.json();
 
     if (!rows || rows.length === 0) {
-      body.innerHTML = '<div class="lb-empty">🏜️ No players yet.<br>Be the first to login with Pi!</div>';
+      body.innerHTML = '<div class="lb-empty">' + i18n('lbEmpty') + '</div>';
       return;
     }
 
@@ -2551,7 +2586,7 @@ function _renderMyRank() {
   panel.style.display = 'flex';
   document.getElementById('lbMyAvatar').textContent = GS.piUser.username.charAt(0).toUpperCase();
   document.getElementById('lbMyName').textContent   = GS.piUser.username;
-  document.getElementById('lbMyDetail').textContent = `Level ${GS.maxUnlocked} · ${GS.coins.toLocaleString()} coins`;
+  document.getElementById('lbMyDetail').textContent = `Lv ${GS.maxUnlocked} · 🪙 ${GS.coins.toLocaleString()}`;
   document.getElementById('lbMyScore').textContent  = `Lv ${GS.maxUnlocked}`;
 
   // جلب ترتيب اللاعب الحالي
@@ -2668,9 +2703,9 @@ else _boot();
 
 function ldProgress(p, txt) {
   const bar = document.getElementById('ldBar');
-  const t   = document.getElementById('ldTxt');
+  const el  = document.getElementById('ldTxt');
   if (bar) bar.style.width = p + '%';
-  if (t)   t.textContent = txt;
+  if (el)  el.textContent = p >= 100 ? i18n('ready') : i18n('loading', { p: Math.round(p) });
 }
 
 // ── PREVENT SCROLL / CONTEXT MENU ──
