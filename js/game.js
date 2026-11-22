@@ -576,7 +576,7 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
-const BUILD_ID = 'login-v3';
+const BUILD_ID = 'login-v5';
 
 // ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
 function _ensureLoginUI() {
@@ -607,7 +607,12 @@ function _ensureLoginUI() {
 
 function _updateBuildInfo() {
   const i = document.getElementById('buildInfo');
-  if (i) i.textContent = BUILD_ID + ' · SDK:' + (typeof Pi !== 'undefined' ? 'ok' : 'missing') + ' · sandbox:' + _inPiSandbox();
+  const inPiBrowser = /PiBrowser/i.test(navigator.userAgent || '');
+  let framed = false; try { framed = window.self !== window.top; } catch(e) { framed = true; }
+  if (i) i.textContent = BUILD_ID + ' · v:' + (window.APP_VERSION || '?') + ' · SDK:' + (typeof Pi !== 'undefined' ? 'ok' : 'missing') +
+    ' · sandbox:' + _inPiSandbox() + ' · PiBrowser:' + (inPiBrowser ? 'yes' : 'no') +
+    ' · init:' + (_piInited ? 'ok' : ('fail' + (_piInitError ? '(' + _piInitError + ')' : ''))) +
+    ' · framed:' + (framed ? 'yes' : 'no') + ' · ' + location.origin;
 }
 
 function _updatePiUI() {
@@ -629,6 +634,20 @@ function _piMsg(text) {
   else if (text) alert(text);
 }
 
+function _addModeButton() {
+  const box = document.getElementById('piLoginMsg');
+  if (!box) return;
+  const old = document.getElementById('piModeBtn');
+  if (old) old.remove();
+  const toSandbox = !_inPiSandbox();
+  const b = document.createElement('button');
+  b.id = 'piModeBtn';
+  b.textContent = toSandbox ? 'Retry in Sandbox mode' : 'Retry in normal mode';
+  b.style.cssText = 'display:block;margin:10px auto 0;padding:7px 14px;border:1px solid #fff;border-radius:16px;background:transparent;color:#fff;font-size:11px;cursor:pointer;';
+  b.onclick = () => { location.href = location.pathname + '?sandbox=' + (toSandbox ? '1' : '0'); };
+  box.appendChild(b);
+}
+
 let _piAuthBusy = false;
 
 // ── تسجيل الدخول بـ Pi ──  (stay=true: لا تغيّر الشاشة الحالية، مثل المتجر)
@@ -645,13 +664,28 @@ async function piAuth(opts) {
       _piMsg('Pi SDK is not available. Please open the game inside Pi Browser and check your internet connection.');
       return false;
     }
-    _initPi();
+    if (!_initPi()) {
+      _piMsg('Pi.init failed: ' + (_piInitError || 'unknown error'));
+      return false;
+    }
 
     // مهلة 40 ثانية حتى لا يبقى الزر معلّقاً
-    const auth = await Promise.race([
+    const attempt = () => Promise.race([
       Pi.authenticate(['username', 'payments'], onIncompletePaymentFound),
       new Promise((_, rej) => setTimeout(() => rej(new Error('Login timed out. Please try again.')), 40000))
     ]);
+    let auth;
+    try {
+      auth = await attempt();
+    } catch (err) {
+      // "SDK was not initialized": نعيد التهيئة مرة واحدة ثم نحاول من جديد
+      if (/not initialized/i.test((err && err.message) || '')) {
+        if (!_initPi(true)) throw new Error('Pi.init failed: ' + (_piInitError || 'unknown error'));
+        auth = await attempt();
+      } else {
+        throw err;
+      }
+    }
 
     _piAccessToken = auth.accessToken;
     GS.piUser = auth.user;
@@ -664,6 +698,7 @@ async function piAuth(opts) {
     console.error('[Pi] Auth failed:', e);
     const detail = (e && (e.message || e.toString())) || 'unknown error';
     _piMsg('Pi login failed: ' + detail + '\n(sandbox=' + _inPiSandbox() + ')');
+    if (document.getElementById('piLogin')?.classList.contains('active')) _addModeButton();
     return false;       // لا ندخل كضيف تلقائياً — اللاعب يقرر
   } finally {
     _piAuthBusy = false;
@@ -2696,7 +2731,7 @@ function _saveAssetsOnDevice() {
     if (!('serviceWorker' in navigator)) return;
     const urls = Assets.log().concat(SFX.urls());
     navigator.serviceWorker.ready.then(reg => {
-      if (reg.active) reg.active.postMessage({ type: 'precache', urls });
+      if (reg.active) reg.active.postMessage({ type: 'precache', urls, version: window.ASSETS_VERSION || '' });
     }).catch(() => {});
   } catch (e) {}
 }
@@ -2719,10 +2754,20 @@ function _inPiSandbox() {
   return (document.referrer || '').indexOf('sandbox.minepi.com') !== -1;
 }
 
-function _initPi() {
-  if (_piInited || typeof Pi === 'undefined') return;
-  try { Pi.init({ version: '2.0', sandbox: _inPiSandbox() }); _piInited = true; }
-  catch(e) { console.error('[Pi] init failed:', e); }
+let _piInitError = null;
+function _initPi(force) {
+  if (typeof Pi === 'undefined') return false;
+  if (_piInited && !force) return true;
+  try {
+    Pi.init({ version: '2.0', sandbox: _inPiSandbox() });
+    _piInited = true; _piInitError = null;
+    return true;
+  } catch(e) {
+    _piInited = false;
+    _piInitError = (e && e.message) || String(e);
+    console.error('[Pi] init failed:', e);
+    return false;
+  }
 }
 
 function _loadPiSdk() {
