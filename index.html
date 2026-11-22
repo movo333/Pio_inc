@@ -605,7 +605,8 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
       <button id="ldContinue" style="flex:1;padding:8px;border:1px solid #fff;border-radius:10px;background:transparent;color:#fff;font-weight:700;">Continue anyway</button>
     </div>
   </div>
-  <div id="ldMsg">Please wait until all game assets are loaded so the game runs smoothly.</div>
+  <div id="ldMsg">Please wait...</div>
+  <div id="ldCache" style="color:#bfe3ff;font-size:12px;line-height:1.5;text-align:center;max-width:300px;margin-top:8px;padding:0 12px;position:relative;z-index:2;">Files download once, then are saved on your device.</div>
   <div style="font-size:11px;color:rgba(255,255,255,0.3);margin-top:8px;">...</div>
 </div>
 
@@ -613,13 +614,13 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
 <div class="screen" id="piLogin">
   <div class="pi-sym">π</div>
   <div class="pi-ttl">Super Cowboy</div>
-  <div class="pi-sub">Sign in with Pi Network to save your progress, compete on leaderboards and make purchases!</div>
+  <div class="pi-sub">Sign in to save your progress and join the leaderboard!</div>
   <button class="pi-btn" onclick="piAuth()">
     🔐 Login with Pi Network
   </button>
   <button class="pi-skip" onclick="playGuest()">🕹️ Play as Guest (no save)</button>
   <div style="margin-top:20px;font-size:10px;color:#555;text-align:center;max-width:260px;line-height:1.6;">
-    Requires Pi Browser · Purchases use Pi (Mainnet)
+    Requires Pi Browser
   </div>
 </div>
 
@@ -629,13 +630,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
   <div class="splash-overlay"></div>
   <div class="splash-content">
     <div class="splash-logo">SUPER COWBOY</div>
-    <div class="splash-sub">The game is in beta testing, so it's normal to find some bugs.</div>
     <img id="btnPlayImg" class="btn-play-img" src="assets/buttons/btn_play.png" onclick="showWorldSelect()" alt="PLAY" onerror="this.style.display='none';document.getElementById('btnPlayFallback').style.display='block'">
     <button id="btnPlayFallback" onclick="showWorldSelect()" style="display:none;background:linear-gradient(135deg,#FFD700,#FF6B00);border:none;border-radius:50px;padding:18px 56px;font-size:26px;font-weight:900;color:#fff;cursor:pointer;margin-top:10px;">▶ PLAY</button>
   </div>
   <div style="position:absolute;bottom:24px;display:flex;gap:12px;z-index:2;">
-    <button onclick="openShop()" style="background:rgba(123,47,190,0.5);border:2px solid #7B2FBE;border-radius:24px;padding:9px 20px;color:#fff;font-size:12px;cursor:pointer;">🛒 Shop</button>
-    <button onclick="showLeaderboard()" style="background:rgba(0,100,0,0.5);border:2px solid #4CAF50;border-radius:24px;padding:9px 20px;color:#fff;font-size:12px;cursor:pointer;">🏆 Scores</button>
+    <button onclick="openShop()" style="background:rgba(123,47,190,0.5);border:2px solid #7B2FBE;border-radius:24px;padding:9px 20px;color:#fff;font-size:12px;cursor:pointer;"><img src="assets/shop/shop_icon.png" style="height:22px;width:auto;vertical-align:middle;margin-inline-end:6px;" onerror="this.outerHTML='🛒 '">Shop</button>
+    <button onclick="showLeaderboard()" style="background:rgba(0,100,0,0.5);border:2px solid #4CAF50;border-radius:24px;padding:9px 20px;color:#fff;font-size:12px;cursor:pointer;"><img src="assets/shop/Leaderboard%20image.png" style="height:22px;width:auto;vertical-align:middle;margin-inline-end:6px;" onerror="this.outerHTML='🏆 '">Scores</button>
   </div>
   <div style="position:absolute;top:16px;right:14px;z-index:2;">
     <div id="piUserBadge" style="display:none;background:rgba(0,0,0,0.5);border:2px solid #FFD700;border-radius:20px;padding:5px 12px;font-size:11px;color:#FFD700;font-weight:700;"></div>
@@ -786,14 +786,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
   <div class="shop-box">
     <button onclick="closeShop()" style="position:absolute;top:10px;right:14px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.25);border-radius:50%;width:38px;height:38px;font-size:18px;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10;">✕</button>
     <button onclick="closeShop()" style="position:absolute;top:10px;left:14px;background:rgba(0,0,0,0.35);border:2px solid rgba(255,255,255,0.25);border-radius:20px;padding:6px 14px;font-size:14px;color:#fff;cursor:pointer;display:flex;align-items:center;gap:6px;z-index:10;">◀ Back</button>
-    <div class="shop-ttl">🛒 Pi Store</div>
+    <div class="shop-ttl"><img src="assets/shop/shop_icon.png" style="height:28px;width:auto;vertical-align:middle;margin-inline-end:8px;" onerror="this.outerHTML='🛒 '">Pi Store</div>
 
     <!-- تبويب الشراء -->
     <div id="shop-tab-iap" style="display:block;padding:8px;">
-    <div class="si"><div class="si-ico"><img src="assets/buttons/coin.png" style="width:36px;height:36px;object-fit:contain;" onerror="this.parentNode.innerHTML='🪙'"></div><div class="si-inf"><div class="si-nm">1000 Coins</div><div class="si-ds">1000 in-game coins instantly</div></div><button class="si-btn" onclick="buy('coins',5)">5π</button></div>
-    <div class="si"><div class="si-ico">⚡</div><div class="si-inf"><div class="si-nm">Speed Boost</div><div class="si-ds">Move faster for this session</div></div><button class="si-btn" onclick="buy('speed',0.5)">0.5π</button></div>
-    <div class="si"><div class="si-ico">🌍</div><div class="si-inf"><div class="si-nm">Unlock All Worlds</div><div class="si-ds">Access all 4 worlds instantly</div></div><button class="si-btn" onclick="buy('worlds',5)">5π</button></div>
-    <div class="si"><div class="si-ico">💎</div><div class="si-inf"><div class="si-nm">Mega Bundle</div><div class="si-ds">All worlds + 1000 coins</div></div><button class="si-btn" onclick="buy('mega',8)">8π</button></div>
+    <div class="si"><div class="si-ico"><img src="assets/shop/1000%20coin.png" style="width:48px;height:48px;object-fit:contain;" onerror="this.parentNode.innerHTML='🪙'"></div><div class="si-inf"><div class="si-nm">1000 Coins</div><div class="si-ds">1000 in-game coins instantly</div></div><button class="si-btn" onclick="buy('coins',0.2)">0.2π</button></div>
+<div class="si"><div class="si-ico">❤️</div><div class="si-inf"><div class="si-nm">5 Hearts</div><div class="si-ds">Extra lives instantly</div></div><button class="si-btn" onclick="buy('hearts',0.2)">0.2π</button></div>
+<div class="si"><div class="si-ico"><img src="assets/shop/unlock%20next%20level.jpg" style="width:48px;height:48px;object-fit:contain;" onerror="this.parentNode.innerHTML='🔓'"></div><div class="si-inf"><div class="si-nm">Unlock Next Level</div><div class="si-ds">Opens only the next level</div></div><button class="si-btn" onclick="buy('level',0.2)">0.2π</button></div>
+<div class="si"><div class="si-ico"><img src="assets/shop/unlock%20next%20world.png" style="width:48px;height:48px;object-fit:contain;" onerror="this.parentNode.innerHTML='🌍'"></div><div class="si-inf"><div class="si-nm">Unlock Next World</div><div class="si-ds">Opens only the next world</div></div><button class="si-btn" onclick="buy('world',0.5)">0.5π</button></div>
+<div class="si"><div class="si-ico">⚡</div><div class="si-inf"><div class="si-nm">Speed Boost</div><div class="si-ds">Move faster for this session</div></div><button class="si-btn" onclick="buy('speed',0.5)">0.5π</button></div>
     </div>
   </div>
 </div>
@@ -835,6 +836,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
 </div>
 
 </div><!-- #app -->
+<script src="js/i18n.js"></script>
 <script src="js/levels.js"></script>
 <script src="js/assets.js"></script>
 <script src="js/game.js"></script>
