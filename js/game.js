@@ -525,7 +525,7 @@ let   _piAccessToken = null;
 const PI_REWARDS = {
   coins:  () => { GS.coins += 1000; updHUD(); },
   speed:  () => { GS.speedBoost = true; updHUD(); },
-  hearts: () => { GS.lives = Math.min(99, GS.lives + 5); updHUD(); },       // 0.2π
+  hearts: () => { GS.lives = Math.min(99, GS.lives + 20); updHUD(); },      // 0.2π
   level:  () => { unlockNextLevel(); },                                      // 0.2π — المرحلة التالية فقط
   world:  () => { unlockNextWorld(); },                                      // 0.5π — العالم التالي فقط
   worlds: () => { GS.allWorlds = true; buildWorldGrid(); },                  // قديم (للدفعات المعلّقة فقط)
@@ -535,7 +535,7 @@ const PI_REWARDS = {
 const PI_MEMOS = {
   coins:  'Super Cowboy: 1000 Coins',
   speed:  'Super Cowboy: Speed Boost',
-  hearts: 'Super Cowboy: 5 Hearts',
+  hearts: 'Super Cowboy: 20 Hearts',
   level:  'Super Cowboy: Unlock Next Level',
   world:  'Super Cowboy: Unlock Next World',
   worlds: 'Super Cowboy: Unlock All Worlds',
