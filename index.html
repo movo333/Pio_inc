@@ -625,6 +625,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
     🔐 Login with Pi Network
   </button>
   <button class="pi-skip" onclick="playGuest()">🕹️ Play as Guest (no save)</button>
+  <div id="piLoginMsg" style="display:none;margin-top:16px;max-width:300px;padding:10px 12px;background:rgba(120,0,0,0.5);border:1px solid #ff6b6b;border-radius:10px;font-size:11px;color:#ffd0d0;text-align:center;line-height:1.5;white-space:pre-wrap;word-break:break-word;"></div>
   <div style="margin-top:20px;font-size:10px;color:#555;text-align:center;max-width:260px;line-height:1.6;">
     Requires Pi Browser
   </div>
@@ -644,6 +645,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
     <button onclick="showLeaderboard()" style="background:none;border:none;padding:0;margin:0 6px;cursor:pointer;"><img src="assets/shop/Leaderboard%20image.png" style="height:44px;width:auto;display:block;" onerror="this.outerHTML='🏆'"></button>
   </div>
   <div style="position:absolute;top:16px;right:14px;z-index:2;">
+    <button id="btnPiLoginSplash" class="pi-btn" onclick="piAuth({stay:true})" style="display:none;padding:7px 14px;font-size:11px;letter-spacing:0;">🔐 Login with Pi</button>
     <div id="piUserBadge" style="display:none;background:rgba(0,0,0,0.5);border:2px solid #FFD700;border-radius:20px;padding:5px 12px;font-size:11px;color:#FFD700;font-weight:700;"></div>
   </div>
 </div>
