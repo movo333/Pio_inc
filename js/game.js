@@ -569,7 +569,7 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
-const BUILD_ID = 'login-v5';
+const BUILD_ID = 'login-v6-neon';
 
 // ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
 function _ensureLoginUI() {
