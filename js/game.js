@@ -581,7 +581,7 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
-const BUILD_ID = 'login-v7';
+const BUILD_ID = 'login-v8';
 
 // ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
 function _ensureLoginUI() {
@@ -661,7 +661,7 @@ async function piAuth(opts) {
   if (_piAuthBusy) return false;
   _piAuthBusy = true;
   _piMsg('');
-  const btns = document.querySelectorAll('.pi-btn, #btnPiLoginSplash, #btnOpenImg');
+  const btns = document.querySelectorAll('.pi-btn, #btnPiLoginSplash');
   btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
   try {
     await _loadPiSdk();
@@ -709,6 +709,13 @@ async function piAuth(opts) {
     _piAuthBusy = false;
     btns.forEach(b => { b.disabled = false; b.style.opacity = ''; });
   }
+}
+
+// ── زر Open: دخول مباشر للّعبة دون تسجيل (التسجيل من الزر الجانبي في الشاشة الرئيسية) ──
+function enterGame() {
+  _updatePiUI();
+  showScreen('splash');
+  setSplashBG();
 }
 
 // ── اللعب كضيف ──
