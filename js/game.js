@@ -358,6 +358,18 @@ function setupRotation() {
   wrapper.style.transform = 'rotate(90deg)';
 }
 
+// فتح صفحة التطبيق على X (من متصفح Pi نستخدم متصفح النظام إن توفّر)
+function openXPage() {
+  const url = 'https://x.com/Supercowboyapp';
+  try {
+    if (typeof Pi !== 'undefined' && typeof Pi.openUrlInSystemBrowser === 'function') {
+      Pi.openUrlInSystemBrowser(url);
+      return;
+    }
+  } catch (e) { /* ننتقل للطريقة العادية */ }
+  window.open(url, '_blank', 'noopener');
+}
+
 function imgOK(img) { return img && img.complete && img.naturalWidth > 0; }
 
 // ── SAVE / LOAD ──
@@ -569,7 +581,7 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
-const BUILD_ID = 'login-v6-neon';
+const BUILD_ID = 'login-v7';
 
 // ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
 function _ensureLoginUI() {
@@ -605,7 +617,7 @@ function _updateBuildInfo() {
   if (i) i.textContent = BUILD_ID + ' · v:' + (window.APP_VERSION || '?') + ' · SDK:' + (typeof Pi !== 'undefined' ? 'ok' : 'missing') +
     ' · sandbox:' + _inPiSandbox() + ' · PiBrowser:' + (inPiBrowser ? 'yes' : 'no') +
     ' · init:' + (_piInited ? 'ok' : ('fail' + (_piInitError ? '(' + _piInitError + ')' : ''))) +
-    ' · framed:' + (framed ? 'yes' : 'no') + ' · ' + location.origin;
+    ' · framed:' + (framed ? 'yes' : 'no');
 }
 
 function _updatePiUI() {
@@ -649,7 +661,7 @@ async function piAuth(opts) {
   if (_piAuthBusy) return false;
   _piAuthBusy = true;
   _piMsg('');
-  const btns = document.querySelectorAll('.pi-btn, #btnPiLoginSplash');
+  const btns = document.querySelectorAll('.pi-btn, #btnPiLoginSplash, #btnOpenImg');
   btns.forEach(b => { b.disabled = true; b.style.opacity = '0.6'; });
   try {
     await _loadPiSdk();
@@ -2770,9 +2782,16 @@ async function _boot() {
     ldProgress(10 + pct * 0.8, 'Loading assets... ' + pct + '%');
   };
   let res = await Assets.loadAll(onProgress);
+  if (res.failed.length) {                       // محاولة ثانية تلقائية (قد يكون انقطاعاً عابراً)
+    ldProgress(10, 'Retrying...');
+    res = await Assets.loadAll(onProgress);
+  }
   while (res.failed.length) {
-    console.warn('[Assets] missing required files:', res.failed);
-    const choice = await _showLoadReport(res.failed);
+    console.warn('[Assets] missing files:', res.failed);
+    // صور البلاطات الناقصة لها بديل مرسوم برمجياً → لا نوقف اللاعب بسببها
+    const important = res.failed.filter(f => !/(^|\/)assets\/tiles\//.test(f));
+    if (!important.length) break;
+    const choice = await _showLoadReport(important);
     if (choice === 'continue') break;
     ldProgress(10, 'Retrying...');
     res = await Assets.loadAll(onProgress);
