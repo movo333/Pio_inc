@@ -621,10 +621,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
   <div class="pi-sym">π</div>
   <div class="pi-ttl">Super Cowboy</div>
   <div class="pi-sub">Sign in to save your progress and join the leaderboard!</div>
-  <img id="btnOpenImg" src="assets/buttons/btn_open.png" onclick="piAuth()" alt="Open"
+  <img id="btnOpenImg" src="assets/buttons/btn_open.png" onclick="enterGame()" alt="Open"
        style="height:72px;width:auto;max-width:80%;cursor:pointer;display:block;margin:6px auto;"
        onerror="this.style.display='none';document.getElementById('btnOpenFallback').style.display='block'">
-  <button id="btnOpenFallback" class="pi-btn" onclick="piAuth()" style="display:none;">▶ Open</button>
+  <button id="btnOpenFallback" class="pi-btn" onclick="enterGame()" style="display:none;">▶ Open</button>
   <div id="piLoginMsg" style="display:none;margin-top:16px;max-width:300px;padding:10px 12px;background:rgba(120,0,0,0.5);border:1px solid #ff6b6b;border-radius:10px;font-size:11px;color:#ffd0d0;text-align:center;line-height:1.5;white-space:pre-wrap;word-break:break-word;"></div>
   <div style="margin-top:20px;font-size:10px;color:#555;text-align:center;max-width:260px;line-height:1.6;">
     Requires Pi Browser
