@@ -247,6 +247,18 @@ function ch_flyers(x) { const k=mk();
   brk(k,x.ri(14,22),G-5,false);
   return k; }
 
+// هضبة بدرجات: صعود 2 ثم 4 ثم سطح مرتفع ثم نزول (تضاريس غير مستوية)
+function ch_mesa(x) { const k=mk();
+  const top=x.diff>=10?5:4;
+  k.hl.push({c:4,len:2,h:2},{c:6,len:2,h:top-1>3?3:top-1},{c:8,len:10,h:top},{c:18,len:2,h:2});
+  coinsH(k,9,8,G-top-1);
+  if (x.diff>=3) W_(x,k,24);
+  if (x.diff>=6) F_(x,k,13,G-top-3);
+  return k; }
+
+// قطعة هادئة: أرض مستوية لتتسع للغرف السرية
+function ch_quiet(x) { const k=mk(); coinsH(k,2,8,G-1,3); return k; }
+
 // جدار كتل قابل للكسر أو القفز
 function ch_block_wall(x) { const k=mk();
   k.am.push({c:4,r:G-1});
@@ -312,7 +324,7 @@ const CHUNKS = {
   crumble:ch_crumble, crumble_islands:ch_crumble_islands, spring_tower:ch_spring_tower,
   sky_islands:ch_sky_islands, coin_heaven:ch_coin_heaven, spikes:ch_spikes,
   spike_tunnel:ch_spike_tunnel, horde:ch_horde, flyers:ch_flyers, block_wall:ch_block_wall,
-  vault:ch_vault, zigzag:ch_zigzag, rest:ch_rest, boss:ch_boss, finale:ch_finale,
+  vault:ch_vault, quiet:ch_quiet, mesa:ch_mesa, zigzag:ch_zigzag, rest:ch_rest, boss:ch_boss, finale:ch_finale,
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -320,34 +332,34 @@ const CHUNKS = {
 // ══════════════════════════════════════════════════════════════
 const ARCH = {
   tutorial: ['open','gap','gap','mountain','vault','coin_heaven'],
-  classic:  ['open','gap','gap_series','mountain','horde','spikes','zigzag','pit','flyers'],
-  hills:    ['mountain','mountain','pillars','pillars','gap','gap_series','horde','vault'],
+  classic:  ['open','gap','gap_series','mountain','mesa','horde','spikes','zigzag','pit','flyers'],
+  hills:    ['mountain','mesa','pillars','mesa','gap','gap_series','horde','vault'],
   sky:      ['pit','pit','crumble','sky_islands','spring_tower','coin_heaven','flyers'],
   gauntlet: ['spikes','spikes','spike_tunnel','gap','gap_series','horde','pillars','zigzag'],
   bounce:   ['spring_tower','spring_tower','coin_heaven','sky_islands','open','zigzag'],
   crumble:  ['crumble','crumble','crumble_islands','gap','gap_series','horde','spikes','mountain'],
   cave:     ['vault','block_wall','block_wall','pillars','spike_tunnel','gap_series','horde','zigzag'],
   rush:     ['horde','horde','flyers','flyers','gap_series','pillars','gap'],
-  treasure: ['coin_heaven','coin_heaven','vault','zigzag','gap','spring_tower','gap_series'],
+  treasure: ['coin_heaven','mesa','vault','zigzag','gap','spring_tower','gap_series'],
   mix:      ['open','gap','gap_series','gap','mountain','pillars','pit','crumble','spring_tower','sky_islands',
-             'coin_heaven','spikes','spike_tunnel','horde','flyers','block_wall','vault','zigzag'],
+             'coin_heaven','spikes','spike_tunnel','horde','flyers','block_wall','vault','mesa','zigzag'],
 };
 const ARCH_ROT = ['classic','hills','sky','gauntlet','bounce','crumble','cave','rush','treasure','mix'];
 
 // نكهة كل عالم (تُضاف لقائمة القطع المحتملة)
 const WORLD_BIAS = {
-  nature:    ['mountain','spring_tower','coin_heaven','gap_series'],
+  nature:    ['mountain','mesa','spring_tower','coin_heaven','gap_series'],
   graveyard: ['crumble','spikes','vault','gap_series'],
-  winter:    ['pit','sky_islands','crumble_islands'],
-  desert:    ['pillars','spikes','horde','block_wall','gap_series'],
+  winter:    ['pit','mesa','sky_islands','crumble_islands'],
+  desert:    ['pillars','mesa','spikes','horde','block_wall','gap_series'],
 };
 
 // أقل صعوبة تظهر عندها القطعة
-const MIN_DIFF = { gap_series:2, crumble_islands:5, spike_tunnel:4, horde:3, flyers:2, spikes:2,
+const MIN_DIFF = { mesa:2, gap_series:2, crumble_islands:5, spike_tunnel:4, horde:3, flyers:2, spikes:2,
                    crumble:3, pit:3, sky_islands:3, block_wall:2 };
 const PITS = new Set(['gap','gap_series','pit','crumble','crumble_islands','sky_islands']);
 
-function planLevel(n, diff, worldIdx, theme, rand, ri) {
+function planLevel(n, diff, worldIdx, theme, rand, ri, quietN) {
   const arch = diff<=2 ? 'tutorial' : ARCH_ROT[(diff + worldIdx*4) % ARCH_ROT.length];
   const isBoss = diff%5===0;
   let nb = 4 + (diff/3|0) + ri(0,1);
@@ -366,6 +378,7 @@ function planLevel(n, diff, worldIdx, theme, rand, ri) {
     body.push(pick); p2=p1; p1=pick;
   }
   if (nb>=8) body.splice(body.length>>1,0,'rest');
+  for (let q=0;q<(quietN||0);q++) body.splice(Math.max(1,Math.floor(body.length*(q+1)/((quietN||0)+1))),0,'quiet');
   if (isBoss){ body.push('rest','boss'); } else body.push('finale');
   return { arch, seq:body, isBoss };
 }
@@ -373,7 +386,11 @@ function planLevel(n, diff, worldIdx, theme, rand, ri) {
 // ══════════════════════════════════════════════════════════════
 //  توليد المرحلة
 // ══════════════════════════════════════════════════════════════
-function generateLevel(n) {
+// ═══ المرحلة 1 مأخوذة من Level1.tmx (محوَّلة إلى خلايا المحرك) ═══
+const TMX_LEVEL1 = {"cols": 269, "rows": [".............................................................................................................................................................................................................................................................................", "..................bqb.................................................................................................q..q...................................................................................................................................................", "..................................====.......................................................................................................................................................................................................................................", "....................................................................................................................==.==.==........................................##.......................................................................................................", "............q...bqbqbqb.......=====.............q.........................q..b........bqbb..........................q..q..q........................................###.......................................................................................................", "..................................................................................................................................................................####.......................................................................................................", "...........................=============.........#########.......................................===.===.===......==.==.==.==......======.......##......#........#####.......................................................................................................", ".................................................#########.....................................................................................###......##......######.......................................................................................................", ".................................................#########....................................................................................####......###############......................................................................................................", "#########################################=======################################..###############...........######################################......###############....##################################################################################################", "#########################################.......################################..###############...........#####################################........####################################################################################################################", "#########################################.......################################..###############...........#####################################........####################################################################################################################", "#########################################.......################################..###############...........#####################################........####################################################################################################################", "#########################################.......################################..###############...........#####################################........####################################################################################################################"], "spikes": [{"c": 38, "w": 2, "v": 1}, {"c": 46, "w": 2, "v": 2}, {"c": 61, "w": 2, "v": 1}], "walkers": [[29, 9], [28, 10], [107, 11], [67, 14], [70, 14], [140, 14], [141, 14]], "flyers": [[121, 0], [19, 4], [87, 4], [119, 4]], "dec": [[4, 91], [6, 73], [8, 186], [9, 187], [10, 55], [11, 55], [13, 91], [18, 186], [19, 187], [21, 55], [22, 55], [23, 73], [28, 55], [30, 55], [31, 91], [39, 55], [48, 186], [49, 187], [58, 135], [63, 91], [64, 91], [66, 55], [67, 186], [68, 134], [68, 187], [69, 135], [69, 55], [70, 73], [76, 55], [77, 43], [77, 55], [78, 91], [83, 91], [84, 186], [85, 187], [86, 55], [88, 73], [89, 55], [90, 186], [91, 187], [112, 91], [113, 73], [116, 186], [117, 187], [118, 91], [120, 55], [121, 186], [122, 187], [124, 91], [125, 55], [127, 55], [128, 55], [131, 91], [133, 186], [134, 187], [135, 55], [136, 55], [171, 186], [172, 187], [174, 91], [175, 91], [178, 73], [179, 186], [180, 187], [182, 91], [183, 13], [184, 91]], "trees": [53, 86, 117, 140, 176], "startCol": 2};
+
+function generateLevel(n, quietN) {
+  quietN = quietN || 0;
   const worldIdx = Math.floor((n-1)/25);
   const theme    = WORLD_THEMES[Math.min(worldIdx,3)];
   const time     = WORLD_TIMES[Math.min(worldIdx,3)];
@@ -395,9 +412,10 @@ function generateLevel(n) {
     B: diff<=15 ? baseEt.boss : bossPool[Math.floor(diff/8)%bossPool.length],
   };
 
-  const plan   = planLevel(n,diff,worldIdx,theme,rand,ri);
-  const chunks = plan.seq.map(t=>(CHUNKS[t]||CHUNKS.open)(x));
-  const COLS   = 8 + chunks.reduce((s,c)=>s+c.w,0) + 26;   // ذيل أطول: مكان للعلم ثم القصر
+  const TMX    = (n===1 && typeof TMX_LEVEL1!=='undefined') ? TMX_LEVEL1 : null;
+  const plan   = TMX ? {seq:['tmx'],arch:'tmx'} : planLevel(n,diff,worldIdx,theme,rand,ri,quietN);
+  const chunks = TMX ? [] : plan.seq.map(t=>(CHUNKS[t]||CHUNKS.open)(x));
+  const COLS   = TMX ? TMX.cols : 8 + chunks.reduce((s,c)=>s+c.w,0) + 26;   // ذيل أطول: مكان للعلم ثم القصر
 
   const cells=[]; for(let r=0;r<ROWS;r++) cells[r]=new Int8Array(COLS);
   for(let r=GND_TOP;r<ROWS;r++) for(let c=0;c<COLS;c++) cells[r][c]=CELL.GND;
@@ -415,60 +433,66 @@ function generateLevel(n) {
     cells[r][wc]=v; return true;
   };
 
-  // ═══════ ارتفاع الأرض: هضاب ومنصات مرتفعة (كل قطعة لها «ارتفاع قاعدة» 0-2) ═══════
-  const minRow = k => { let m=99; const f=a=>a.forEach(o=>{ if(o.r<m) m=o.r; });
-    f(k.p);f(k.co);f(k.br);f(k.spr);f(k.cr);f(k.am); k.en.forEach(e=>{ if(e.fly&&e.r<m) m=e.r; }); return m; };
-  const shiftRows = (k,d) => { if(!d) return;
-    [k.p,k.co,k.br,k.spr,k.cr,k.am].forEach(a=>a.forEach(o=>{ o.r-=d; }));
-    k.en.forEach(e=>{ if(e.fly) e.r-=d; }); };
-  const lifts=[];
-  { const maxL = diff<=1?0:(diff<=5?1:2); let cur=0; const seq=plan.seq;
-    for (let i=0;i<chunks.length;i++){
-      const t=seq[i]; let L=cur;
-      if (i===0 || t==='boss' || t==='finale' || (t==='rest' && seq[i+1]==='boss')) L=0;
-      else if (maxL>0 && rand()<0.65){
-        L=cur+(rand()<0.5?-1:1);
-        if (L<0||L>maxL) L=cur+(cur===0?1:-1);
-        L=Math.max(0,Math.min(maxL,L));
-      }
-      L=Math.min(L,Math.max(0,minRow(chunks[i])-1));      // لا تخرج العناصر فوق أعلى الخريطة
-      lifts.push(L); cur=L;
-    } }
-
   let off=8, ci=0;
   const movers=[];
+  if (TMX){
+    // ── الأرض والمنصات وكتل الكسر ──
+    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
+      const ch=TMX.rows[r][c];
+      cells[r][c] = ch==='#'?CELL.GND : ch==='='?CELL.PLT : CELL.AIR;
+      if (ch==='b'||ch==='q') breakables.push({c,r,hasHeart:false,hasCoin:ch==='q'});
+    }
+    for (let c=0;c<COLS;c++){ groundTop[c]=null; for (let r=0;r<ROWS;r++) if (cells[r][c]===CELL.GND){ groundTop[c]=r; break; } }
+    for (let c=0;c<COLS;){ if (groundTop[c]===null){ let d=c; while(d<COLS&&groundTop[d]===null) d++; gaps.push({c,len:d-c}); c=d; } else c++; }
+    const flatC = c => c>3&&c<COLS-24&&groundTop[c]!==null&&groundTop[c-1]===groundTop[c]&&groundTop[c+1]===groundTop[c]&&groundTop[c+2]===groundTop[c];
+    // ── الأشواك ──
+    for (const s of TMX.spikes){
+      let ok=true; for (let wc=s.c;wc<s.c+s.w;wc++) if (groundTop[wc]!==GND_TOP||cells[GND_TOP-1][wc]!==CELL.AIR) ok=false;
+      if (ok) spikeGroups.push({c:s.c,w:s.w,v:s.v});
+    }
+    // ── الأعداء ──
+    let lastW=-99;
+    for (const [c0] of TMX.walkers){
+      if (c0-lastW<5) continue;
+      for (const d of [0,1,-1,2,-2,3,-3,4,-4]){ const wc=c0+d;
+        if (flatC(wc)&&!nearSpike(wc,2)){ enemies.push({type:x.W(),c:wc,r:groundTop[wc]-1,fly:false,dir:rand()<.5?1:-1}); lastW=c0; break; } }
+    }
+    for (const [c0,r0] of TMX.flyers) enemies.push({type:x.F(),c:c0,r:Math.max(2,r0),fly:true,dir:rand()<.5?1:-1});
+    // ── عملات: أقواس فوق الحفر، وفوق المنصات، وخطوط على الأرض ──
+    const addCoin=(c,r)=>{ if(c>0&&c<COLS-1&&r>=0&&r<ROWS&&cells[r][c]===CELL.AIR&&!hasBrk(c,r)&&!coins.some(k=>k.c===c&&k.r===r)&&!(r>=G-2&&nearSpike(c,0))) coins.push({c,r}); };
+    for (const g of gaps) if (g.len>=3) for (let i=0;i<g.len;i++) addCoin(g.c+i, GND_TOP-3-Math.round(Math.sin(Math.PI*(i+0.5)/g.len)*2));
+    for (let r=1;r<ROWS-1;r++) for (let c=0;c<COLS;){
+      if (cells[r][c]===CELL.PLT){ let d=c; while(d<COLS&&cells[r][d]===CELL.PLT) d++; if (d-c>=2&&c<COLS-30) for (let q=c;q<d;q++) addCoin(q,r-1); c=d; } else c++;
+    }
+    for (let c=7;c<COLS-40;c+=13) if (flatC(c)&&flatC(c+3)&&!nearSpike(c,3)) for (let q=0;q<4;q++) addCoin(c+q,groundTop[c+q]-1);
+    // ── ديكور: أشجار وشجيرات من الخريطة الأصلية ──
+    const treeImgs=['Tree_1.png','Tree_2.png','Tree_3.png'];
+    TMX.trees.forEach((c,i)=>{ if (groundTop[c]!==null&&cells[groundTop[c]-1][c]===CELL.AIR) decos.push({c,r:groundTop[c]-1,img:treeImgs[i%3]}); });
+    const decImg={55:'Bush__1_.png',73:'Bush__2_.png',91:'Mushroom_1.png',186:'Flower_1.png',187:'Flower_2.png'};
+    for (const [c,g] of TMX.dec){ if (!flatC(c)||decos.some(d=>Math.abs(d.c-c)<3)||cells[groundTop[c]-1][c]!==CELL.AIR) continue;
+      decos.push({c,r:groundTop[c]-1,img:decImg[g]||'Grass_1.png'}); }
+  }
   for (const chunk of chunks){
     const W=chunk.w;
-    const idx=ci;
     const ctype=plan.seq[ci++];
-    const L=lifts[idx], prevL=idx?lifts[idx-1]:0, gt=GND_TOP-L;   // gt = صف سطح أرض هذه القطعة
-    shiftRows(chunk,L);
-    // 0) رفع الأرض + منحدر تدريجي بين القطعتين (درجة كل عمودين)
-    for (let c=0;c<W;c++){
-      const wc=off+c; if(!inRange(wc)) continue;
-      let hgt=L; const d=L-prevL, n=Math.abs(d)*2;
-      if (d!==0 && c<n){ const k=(c>>1)+1; hgt = d>0 ? prevL+k : prevL-k; }
-      for (let r=GND_TOP-hgt;r<GND_TOP;r++) cells[r][wc]=CELL.GND;
-      groundTop[wc]=GND_TOP-hgt;
-    }
     // 1) فجوات
     for (const g of chunk.ga){
       const a=g.c, b=Math.min(g.c+g.len,W-1);
-      for (let gc=a;gc<b;gc++){ for(let r=gt;r<ROWS;r++) cells[r][off+gc]=CELL.AIR; groundTop[off+gc]=null; }
+      for (let gc=a;gc<b;gc++){ for(let r=GND_TOP;r<ROWS;r++) cells[r][off+gc]=CELL.AIR; groundTop[off+gc]=null; }
       gaps.push({c:off+a,len:b-a});
       // عبّارة متحركة تعبر الحفر العريضة (جسم جديد: float_platform)
-      if (ctype==='pit' && diff>=3 && b-a>=8) movers.push({c:off+a, len:3, span:b-a, r:gt-1, speed:0.9+rand()*0.5, phase:rand()*6.28});
+      if (ctype==='pit' && diff>=3 && b-a>=8) movers.push({c:off+a, len:3, span:b-a, r:G-1, speed:0.9+rand()*0.5, phase:rand()*6.28});
     }
     // 2) تلال/أعمدة (ارتفاع الأرض)
     for (const h of chunk.hl){
       for (let c=h.c;c<Math.min(h.c+h.len,W);c++){
         const wc=off+c; if(groundTop[wc]===null) continue;
-        for (let r=gt-h.h;r<groundTop[wc];r++) cells[r][wc]=CELL.GND;
-        groundTop[wc]=Math.min(groundTop[wc],gt-h.h);
+        for (let r=GND_TOP-h.h;r<GND_TOP;r++) cells[r][wc]=CELL.GND;
+        groundTop[wc]=Math.min(groundTop[wc],GND_TOP-h.h);
       }
     }
     // 3) بلاطات تنهار
-    for (const s of chunk.cr){ const wc=off+s.c; if(inRange(wc)){ cells[s.r][wc]=CELL.CRUMBLE; if(s.r===gt) groundTop[wc]=null; } }
+    for (const s of chunk.cr){ const wc=off+s.c; if(inRange(wc)){ cells[s.r][wc]=CELL.CRUMBLE; if(s.r===GND_TOP) groundTop[wc]=null; } }
     // 4) منصات
     for (const p of chunk.p){
       for (let c=p.c;c<p.c+p.len;c++){ const wc=off+c; if(inRange(wc)&&cells[p.r][wc]===CELL.AIR) cells[p.r][wc]=CELL.PLT; }
@@ -479,7 +503,7 @@ function generateLevel(n) {
       // لا تُوضع الأشواك قرب الهوات/التلال: الإطار (الصورة) يجب أن يبقى كله فوق أرض مستوية
       const c0=off+s.c; let ok=c0>14;
       for (let wc=c0-2; ok && wc<=c0+s.w+1; wc++){
-        if (!inRange(wc)||groundTop[wc]!==gt||cells[gt][wc]!==CELL.GND||cells[gt-1][wc]!==CELL.AIR) ok=false;
+        if (!inRange(wc)||groundTop[wc]!==GND_TOP||cells[GND_TOP][wc]!==CELL.GND||cells[GND_TOP-1][wc]!==CELL.AIR) ok=false;
       }
       if (ok && !nearSpike(c0,3) && !nearSpike(c0+s.w-1,3)) spikeGroups.push({c:c0,w:s.w,v:s.v});
     }
@@ -494,7 +518,7 @@ function generateLevel(n) {
     // 7) عملات (في الهواء فقط وليس داخل كتلة)
     for (const co of chunk.co){
       const wc=off+co.c;
-      if (inRange(wc)&&co.r>=0&&cells[co.r]&&cells[co.r][wc]===CELL.AIR&&!hasBrk(wc,co.r)&&!(co.r>=gt-2&&nearSpike(wc,0))) coins.push({c:wc,r:co.r});
+      if (inRange(wc)&&co.r>=0&&cells[co.r]&&cells[co.r][wc]===CELL.AIR&&!hasBrk(wc,co.r)&&!(co.r>=G-2&&nearSpike(wc,0))) coins.push({c:wc,r:co.r});
     }
     // 8) ذخيرة خاصة بالقطعة
     for (const a of chunk.am){ const wc=off+a.c; if(inRange(wc)&&cells[a.r][wc]===CELL.AIR&&!nearSpike(wc,2)) ammos.push({c:wc,r:a.r}); }
@@ -512,52 +536,57 @@ function generateLevel(n) {
     off+=W;
   }
 
-  // ═══════ المناطق السرية: غرفة مخفية داخل تلّ ترابي (3 نجوم في كل مرحلة) ═══════
-  // التلّ: 4 درجات صاعدة (ارتفاع 1..4) ثم هضبة بارتفاع 5. داخل الهضبة غرفة بعرض 4 + مدخل
-  // على الوجه الأيمن للجرف. الغرفة فراغ حقيقي لكنها تُرسم ترابية حتى يدخلها اللاعب.
+  // ═══════ المناطق السرية: غرفة مخفية داخل جدار هضبة (3 نجوم لكل مرحلة) ═══════
+  // هضبة بارتفاع 5 بلاطات: درج على جهة، وعلى الجهة الأخرى جدار ترابي "مزيّف" تدخل منه إلى غرفة فيها نجمة
   const secrets=[], items=[];
-  const zoneCols=(wc)=>secrets.some(z=>wc>=z.c-1&&wc<z.c+z.w+1);
-  const inZone = zoneCols;
-  const MW=10;
-  const canMound=(a,relaxed)=>{
-    const b=a+MW-1;
-    if (a<14||b>COLS-34) return false;
-    if (secrets.some(z=>a<z.mc+MW+4&&b>z.mc-4)) return false;
-    for (let c=a-2;c<=b+3;c++){
-      if (c<1||c>=COLS-1||groundTop[c]!==GND_TOP||cells[GND_TOP][c]!==CELL.GND) return false;
-      if (c>=a&&c<=b){ for (let r=0;r<GND_TOP;r++) if (cells[r][c]!==CELL.AIR && !(relaxed&&cells[r][c]===CELL.PLT)) return false; }
-      else if (cells[GND_TOP-1][c]!==CELL.AIR) return false;
-      if (nearSpike(c,1)) return false;
+  const inZone = wc => secrets.some(z=>wc>=z.c0-1&&wc<z.c0+16+1);
+  const regionFree=(a,w)=>{
+    const b=a+w-1;
+    if (a<12||b>COLS-34) return false;
+    if (secrets.some(z=>a<z.c0+16+4&&b>z.c0-4)) return false;
+    for (let c=a-1;c<=b+1;c++){
+      if (groundTop[c]!==GND_TOP||cells[GND_TOP][c]!==CELL.GND) return false;
+      for (let r=0;r<GND_TOP;r++) if (cells[r][c]!==CELL.AIR) return false;
+      if (nearSpike(c,2)) return false;
     }
+    if (breakables.some(k=>k.c>=a-1&&k.c<=b+1)) return false;
     return true;
   };
-  const addMound=(a)=>{
-    const b=a+MW-1, id=secrets.length;
-    for (let c=a;c<=b;c++) for (let r=0;r<GND_TOP;r++) if (cells[r][c]===CELL.PLT) cells[r][c]=CELL.AIR;   // نزيل منصات تعيق التلّ
-    for (let i=0;i<MW;i++){ const h=i<4?i+1:5, wc=a+i;
-      for (let r=GND_TOP-h;r<GND_TOP;r++) cells[r][wc]=CELL.GND;
-      groundTop[wc]=GND_TOP-h; }
-    for (let c=a+5;c<=b;c++) for (let r=GND_TOP-4;r<GND_TOP;r++) cells[r][c]=CELL.AIR;   // الغرفة + المدخل
-    const inR=c=>c>=a-1&&c<=b+1;
-    for (const arr of [coins,ammos,decos]) for (let i=arr.length-1;i>=0;i--) if (inR(arr[i].c)) arr.splice(i,1);
-    for (let i=enemies.length-1;i>=0;i--){ const e=enemies[i]; if (inR(e.c)||(e.fly&&e.c>=a-4&&e.c<=b+4)) enemies.splice(i,1); }
-    for (let i=breakables.length-1;i>=0;i--) if (inR(breakables[i].c)) breakables.splice(i,1);
-    for (let i=platforms.length-1;i>=0;i--) if (inR(platforms[i].c)) platforms.splice(i,1);
-    secrets.push({id,kind:'cave',c:a+5,r:GND_TOP-4,w:5,h:4,mc:a,starC:a+7,starR:GND_TOP-2});
-    coins.push({c:a+6,r:GND_TOP-1},{c:a+8,r:GND_TOP-1});
-    items.push({type:'gem',c:a+5,r:GND_TOP-2});
-    for (let c=a+4;c<=b;c++) coins.push({c,r:GND_TOP-6});          // مكافأة صعود التلّ
+  const addChamber=(a,dir)=>{
+    const id=secrets.length, p0=a+1;
+    const colOf=j=>dir>0?p0+j:p0+13-j;                 // j = موضع من جهة الدرج
+    for (let j=0;j<14;j++){
+      const h=j<2?2:(j<4?4:5), col=colOf(j);
+      for (let r=G-h;r<G;r++) cells[r][col]=CELL.GND;
+      groundTop[col]=G-h;
+    }
+    for (let j=6;j<14;j++) for (let r=G-4;r<G;r++) cells[r][colOf(j)]=CELL.AIR;   // الغرفة + الممر المزيّف
+    // تنظيف العملات والأعداء من منطقة الهضبة
+    const lo=p0-7, hi=p0+13+7;
+    for (let q=coins.length-1;q>=0;q--) if (coins[q].c>=p0&&coins[q].c<=p0+13&&coins[q].r>=G-5) coins.splice(q,1);
+    for (let q=enemies.length-1;q>=0;q--) if (enemies[q].c>=lo&&enemies[q].c<=hi) enemies.splice(q,1);
+    const c6=colOf(6), c13=colOf(13);
+    secrets.push({id,kind:'chamber',dir,c0:a,c:Math.min(c6,c13),r:G-4,w:8,h:4,starC:colOf(8),starR:G-2});
+    coins.push({c:colOf(7),r:G-2},{c:colOf(9),r:G-2},{c:colOf(11),r:G-2});
+    items.push({type:'gem',c:colOf(10),r:G-2});
   };
   {
-    const lo=14, hi=COLS-34, seg=(hi-lo)/3;
+    const lo=12, hi=COLS-34, seg=(hi-lo)/3;
+    if (TMX){
+      for (let k=0;k<3;k++){
+        const dir=1, tgt=[56,116,166][k]-8;
+        const cand=[]; for (let a=lo;a<hi-16;a++) cand.push(a);
+        cand.sort((p,q)=>Math.abs(p-tgt)-Math.abs(q-tgt));
+        for (const a of cand) if (regionFree(a,16)){ addChamber(a,dir); break; }
+      }
+    } else
     for (let k=0;k<3;k++){
-      let done=false;
-      for (let pass=0;pass<4&&!done;pass++){
-        const rx=pass>=2, wide=pass%2===1;
-        const s0=!wide?Math.floor(lo+seg*k):lo, s1=!wide?Math.floor(lo+seg*(k+1)):hi;
-        const start=s0+ri(0,5);
-        for (let a=start;a<s1-MW;a++){ if (canMound(a,rx)){ addMound(a); done=true; break; } }
-        if (!done) for (let a=s0;a<start&&a<s1-MW;a++){ if (canMound(a,rx)){ addMound(a); done=true; break; } }
+      const dir=1; let done=false;
+      for (let pass=0;pass<2&&!done;pass++){
+        const s0=pass===0?Math.floor(lo+seg*k):lo, s1=pass===0?Math.floor(lo+seg*(k+1)):hi;
+        const start=s0+ri(0,4);
+        for (let a=start;a<s1-16&&!done;a++) if (regionFree(a,16)){ addChamber(a,dir); done=true; }
+        for (let a=s0;a<start&&a<s1-16&&!done;a++) if (regionFree(a,16)){ addChamber(a,dir); done=true; }
       }
     }
   }
@@ -607,6 +636,7 @@ function generateLevel(n) {
     decos.push({c,r:gt-1,img:dl[Math.floor(rand()*dl.length)]});
   }
 
+  if (secrets.length<3 && quietN<3) return generateLevel(n, quietN+1);
   return {
     world:worldIdx+1, theme, time,
     cols:COLS, rows:ROWS, gndRow:GND_TOP,
@@ -615,7 +645,7 @@ function generateLevel(n) {
     secrets, items, movers,
     goal:{c:COLS-21,r:GND_TOP-1},
     castle:{c:COLS-9},
-    startCol:1, startRow:GND_TOP-1,
+    startCol:TMX?TMX.startCol:1, startRow:GND_TOP-1,
     tileSet:TILE_VARIANTS[theme],
     diff, arch:plan.arch, seq:plan.seq,
   };

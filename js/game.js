@@ -617,7 +617,7 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
-const BUILD_ID = 'secrets-v10';
+const BUILD_ID = 'tmx-v10';
 
 // ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
 function _ensureLoginUI() {
@@ -1139,7 +1139,7 @@ function buildWorld(ld) {
   // ── المناطق السرية + النجوم ──
   secrets = [];
   (ld.secrets || []).forEach((z, i) => {
-    secrets.push({ id:i, x:z.c*TS, y:z.r*TS, w:z.w*TS, h:z.h*TS, gc:z.c, gr:z.r, gw:z.w, gh:z.h, revealed:false, a:1, cv:null,
+    secrets.push({ id:i, kind:z.kind, dir:z.dir, x:z.c*TS, y:z.r*TS, w:z.w*TS, h:z.h*TS, revealed:false, a:1, cv:null,
                    seed:(z.c * 131 + i * 977 + ld.cols) >>> 0, theme:ld.theme });
     pickups.push({ x:z.starC*TS + 2, y:z.starR*TS + 2, w:28, h:28, type:'star', zone:i, done:false });
   });
@@ -2006,10 +2006,10 @@ function getTileVariant(tile, ld, TV, tImgs, theme) {
     else variantId = TV.plat_mid;
   } else {
     // Ground: top/middle/bottom, left/center/right
-    const topExposed = !(isGnd(above) || secretSolid(r-1, c));
-    const botExposed = !(isGnd(below) || secretSolid(r+1, c));
-    const lftExposed = !(isGnd(left)  || secretSolid(r, c-1));
-    const rgtExposed = !(isGnd(right) || secretSolid(r, c+1));
+    const topExposed = !isGnd(above);
+    const botExposed = !isGnd(below);
+    const lftExposed = !isGnd(left);
+    const rgtExposed = !isGnd(right);
 
     if (topExposed && lftExposed && !rgtExposed) variantId = TV.gnd_top_left;
     else if (topExposed && rgtExposed && !lftExposed) variantId = TV.gnd_top_right;
@@ -2459,7 +2459,7 @@ function updSecrets(dt) {
   const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
   for (const z of secrets) {
     if (!z.revealed) {
-      if (cx > z.x && cx < z.x + z.w && cy > z.y && cy < z.y + z.h - 45) {
+      if (cx > z.x && cx < z.x + z.w && cy > z.y && cy < z.y + z.h - (z.kind === 'chamber' ? 0 : 45)) {
         z.revealed = true;
         SFX.synth('secret');
         addPopup(cx, player.y - 24, 'SECRET AREA!', '#FFE082');
@@ -2493,58 +2493,50 @@ const COVER_COL = {
   winter:    ['#5C8FC9', '#A9D1F5', '#F4FAFF'],
   desert:    ['#BF360C', '#E65100', '#FFB74D'],
 };
-// هل الخلية (صف، عمود) داخل غرفة سرية ما زال غطاؤها ظاهراً؟ (تُعامل كأرض صلبة في الرسم فقط)
-function secretSolid(r, c) {
-  for (const z of secrets) {
-    if (z.a > 0.5 && c >= z.gc && c < z.gc + z.gw && r >= z.gr && r < z.gr + z.gh) return true;
-  }
-  return false;
-}
-// الغطاء = نفس بلاطات التراب المحيطة، فيبدو الجدار مصمتاً تماماً حتى يدخله اللاعب
-function makeCover(z) {
-  const ld = LEVELS[GS.curLevel], theme = ld.theme;
-  const tImgs = TILE_IMGS[theme] || {}, TV = TILE_VARIANTS[theme] || {};
-  const cv = document.createElement('canvas');
-  cv.width = z.w; cv.height = z.h;
+// غطاء الغرفة المخفية: يُرسم ببلاطات التراب نفسها فيبدو كجدار صلب حتى تدخله
+function makeDirtCover(z) {
+  const cols = Math.round(z.w / TS), rows = Math.round(z.h / TS);
+  const cv = document.createElement('canvas'); cv.width = z.w; cv.height = z.h;
   const g = cv.getContext('2d');
-  const inZone = (r, c) => c >= z.gc && c < z.gc + z.gw && r >= z.gr && r < z.gr + z.gh;
-  const solid = (r, c) => {
-    if (inZone(r, c)) return true;
-    if (r < 0 || r >= ld.rows || c < 0 || c >= ld.cols) return false;
-    const v = ld.cells[r][c];
-    return v === T.GND || v === T.PLT;
-  };
-  const fallback = { nature:'#5D4037', graveyard:'#37474F', winter:'#5C6BC0', desert:'#8D6E63' }[theme] || '#5D4037';
-  for (let rr = 0; rr < z.gh; rr++) for (let cc = 0; cc < z.gw; cc++) {
-    const r = z.gr + rr, c = z.gc + cc;
-    const topE = !solid(r - 1, c), botE = !solid(r + 1, c), lftE = !solid(r, c - 1), rgtE = !solid(r, c + 1);
-    let v;
-    if (topE && lftE && !rgtE) v = TV.gnd_top_left;
-    else if (topE && rgtE && !lftE) v = TV.gnd_top_right;
-    else if (topE) v = TV.gnd_top_mid;
-    else if (botE && lftE) v = TV.gnd_bot_left;
-    else if (botE && rgtE) v = TV.gnd_bot_right;
-    else if (botE) v = TV.gnd_bot_mid;
-    else if (lftE) v = TV.gnd_mid_left;
-    else if (rgtE) v = TV.gnd_mid_right;
-    else v = TV.gnd_mid_fill;
-    const img = tImgs[v];
-    if (imgOK(img)) g.drawImage(img, cc * TS, rr * TS, TS, TS);
-    else { g.fillStyle = fallback; g.fillRect(cc * TS, rr * TS, TS, TS); g.strokeStyle = 'rgba(0,0,0,0.1)'; g.strokeRect(cc * TS, rr * TS, TS, TS); }
+  const tImgs = TILE_IMGS[z.theme] || {}, TV = TILE_VARIANTS[z.theme] || {};
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    let id = TV.gnd_mid_fill;
+    if (z.dir > 0 && c === cols - 1) id = TV.gnd_mid_right;     // الوجه الخارجي على اليمين
+    if (z.dir < 0 && c === 0)        id = TV.gnd_mid_left;      // الوجه الخارجي على اليسار
+    const img = tImgs[id];
+    if (imgOK(img)) g.drawImage(img, c * TS, r * TS, TS, TS);
+    else { g.fillStyle = '#8D5A2B'; g.fillRect(c * TS, r * TS, TS, TS); }
   }
   z.cv = cv; z.pad = 0;
+}
+function makeCover(z) {
+  if (z.kind === 'chamber') return makeDirtCover(z);
+  const pad = 20, cv = document.createElement('canvas');
+  cv.width = z.w + pad * 2; cv.height = z.h + pad * 2;
+  const g = cv.getContext('2d'), col = COVER_COL[z.theme] || COVER_COL.nature;
+  let s = z.seed || 1; const R = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  const puffs = [];
+  for (let y = -2; y <= z.h + 2; y += 15) for (let x = -2; x <= z.w + 2; x += 15)
+    puffs.push([x + pad + (R() - 0.5) * 12, y + pad + (R() - 0.5) * 12, 19 + R() * 9]);
+  for (let layer = 0; layer < 3; layer++) {
+    g.fillStyle = col[layer];
+    for (const [x, y, r] of puffs) { g.beginPath(); g.arc(x - layer * 3, y - layer * 4, Math.max(6, r - layer * 6), 0, Math.PI * 2); g.fill(); }
+  }
+  z.cv = cv; z.pad = pad;
 }
 function drawSecretCovers() {
   const W = parseInt(canvas.style.width) || canvas.width;
   const tm = Date.now() * 0.004;
   for (const z of secrets) {
-    if (z.a <= 0) continue;
     if (z.x - camera.x > W + 40 || z.x + z.w - camera.x < -40) continue;
+    // الغرفة بعد الكشف: إظلام خفيف يوحي بأنها كهف داخل الجدار
+    if (z.kind === 'chamber' && z.revealed) { ctx.fillStyle = 'rgba(8,4,22,' + (0.5 * (1 - z.a)).toFixed(3) + ')'; ctx.fillRect(z.x, z.y, z.w, z.h); }
+    if (z.a <= 0) continue;
     if (!z.cv) makeCover(z);
     ctx.globalAlpha = z.a;
     ctx.drawImage(z.cv, z.x - z.pad, z.y - z.pad);
     // لمعة خفيفة تلمّح بوجود سرّ
-    if (!z.revealed) {
+    if (!z.revealed && z.kind !== 'chamber') {
       for (let i = 0; i < 2; i++) {
         const k = (Math.sin(tm + z.id * 2 + i * 3) + 1) / 2;
         const gx = z.x + z.w * (0.25 + 0.5 * i), gy = z.y + z.h * (0.35 + 0.25 * i), r = 3 + k * 6;
