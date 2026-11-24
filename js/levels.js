@@ -415,29 +415,60 @@ function generateLevel(n) {
     cells[r][wc]=v; return true;
   };
 
+  // ═══════ ارتفاع الأرض: هضاب ومنصات مرتفعة (كل قطعة لها «ارتفاع قاعدة» 0-2) ═══════
+  const minRow = k => { let m=99; const f=a=>a.forEach(o=>{ if(o.r<m) m=o.r; });
+    f(k.p);f(k.co);f(k.br);f(k.spr);f(k.cr);f(k.am); k.en.forEach(e=>{ if(e.fly&&e.r<m) m=e.r; }); return m; };
+  const shiftRows = (k,d) => { if(!d) return;
+    [k.p,k.co,k.br,k.spr,k.cr,k.am].forEach(a=>a.forEach(o=>{ o.r-=d; }));
+    k.en.forEach(e=>{ if(e.fly) e.r-=d; }); };
+  const lifts=[];
+  { const maxL = diff<=1?0:(diff<=5?1:2); let cur=0; const seq=plan.seq;
+    for (let i=0;i<chunks.length;i++){
+      const t=seq[i]; let L=cur;
+      if (i===0 || t==='boss' || t==='finale' || (t==='rest' && seq[i+1]==='boss')) L=0;
+      else if (maxL>0 && rand()<0.65){
+        L=cur+(rand()<0.5?-1:1);
+        if (L<0||L>maxL) L=cur+(cur===0?1:-1);
+        L=Math.max(0,Math.min(maxL,L));
+      }
+      L=Math.min(L,Math.max(0,minRow(chunks[i])-1));      // لا تخرج العناصر فوق أعلى الخريطة
+      lifts.push(L); cur=L;
+    } }
+
   let off=8, ci=0;
   const movers=[];
   for (const chunk of chunks){
     const W=chunk.w;
+    const idx=ci;
     const ctype=plan.seq[ci++];
+    const L=lifts[idx], prevL=idx?lifts[idx-1]:0, gt=GND_TOP-L;   // gt = صف سطح أرض هذه القطعة
+    shiftRows(chunk,L);
+    // 0) رفع الأرض + منحدر تدريجي بين القطعتين (درجة كل عمودين)
+    for (let c=0;c<W;c++){
+      const wc=off+c; if(!inRange(wc)) continue;
+      let hgt=L; const d=L-prevL, n=Math.abs(d)*2;
+      if (d!==0 && c<n){ const k=(c>>1)+1; hgt = d>0 ? prevL+k : prevL-k; }
+      for (let r=GND_TOP-hgt;r<GND_TOP;r++) cells[r][wc]=CELL.GND;
+      groundTop[wc]=GND_TOP-hgt;
+    }
     // 1) فجوات
     for (const g of chunk.ga){
       const a=g.c, b=Math.min(g.c+g.len,W-1);
-      for (let gc=a;gc<b;gc++){ for(let r=GND_TOP;r<ROWS;r++) cells[r][off+gc]=CELL.AIR; groundTop[off+gc]=null; }
+      for (let gc=a;gc<b;gc++){ for(let r=gt;r<ROWS;r++) cells[r][off+gc]=CELL.AIR; groundTop[off+gc]=null; }
       gaps.push({c:off+a,len:b-a});
       // عبّارة متحركة تعبر الحفر العريضة (جسم جديد: float_platform)
-      if (ctype==='pit' && diff>=3 && b-a>=8) movers.push({c:off+a, len:3, span:b-a, r:G-1, speed:0.9+rand()*0.5, phase:rand()*6.28});
+      if (ctype==='pit' && diff>=3 && b-a>=8) movers.push({c:off+a, len:3, span:b-a, r:gt-1, speed:0.9+rand()*0.5, phase:rand()*6.28});
     }
     // 2) تلال/أعمدة (ارتفاع الأرض)
     for (const h of chunk.hl){
       for (let c=h.c;c<Math.min(h.c+h.len,W);c++){
         const wc=off+c; if(groundTop[wc]===null) continue;
-        for (let r=GND_TOP-h.h;r<GND_TOP;r++) cells[r][wc]=CELL.GND;
-        groundTop[wc]=Math.min(groundTop[wc],GND_TOP-h.h);
+        for (let r=gt-h.h;r<groundTop[wc];r++) cells[r][wc]=CELL.GND;
+        groundTop[wc]=Math.min(groundTop[wc],gt-h.h);
       }
     }
     // 3) بلاطات تنهار
-    for (const s of chunk.cr){ const wc=off+s.c; if(inRange(wc)){ cells[s.r][wc]=CELL.CRUMBLE; if(s.r===GND_TOP) groundTop[wc]=null; } }
+    for (const s of chunk.cr){ const wc=off+s.c; if(inRange(wc)){ cells[s.r][wc]=CELL.CRUMBLE; if(s.r===gt) groundTop[wc]=null; } }
     // 4) منصات
     for (const p of chunk.p){
       for (let c=p.c;c<p.c+p.len;c++){ const wc=off+c; if(inRange(wc)&&cells[p.r][wc]===CELL.AIR) cells[p.r][wc]=CELL.PLT; }
@@ -448,7 +479,7 @@ function generateLevel(n) {
       // لا تُوضع الأشواك قرب الهوات/التلال: الإطار (الصورة) يجب أن يبقى كله فوق أرض مستوية
       const c0=off+s.c; let ok=c0>14;
       for (let wc=c0-2; ok && wc<=c0+s.w+1; wc++){
-        if (!inRange(wc)||groundTop[wc]!==GND_TOP||cells[GND_TOP][wc]!==CELL.GND||cells[GND_TOP-1][wc]!==CELL.AIR) ok=false;
+        if (!inRange(wc)||groundTop[wc]!==gt||cells[gt][wc]!==CELL.GND||cells[gt-1][wc]!==CELL.AIR) ok=false;
       }
       if (ok && !nearSpike(c0,3) && !nearSpike(c0+s.w-1,3)) spikeGroups.push({c:c0,w:s.w,v:s.v});
     }
@@ -463,7 +494,7 @@ function generateLevel(n) {
     // 7) عملات (في الهواء فقط وليس داخل كتلة)
     for (const co of chunk.co){
       const wc=off+co.c;
-      if (inRange(wc)&&co.r>=0&&cells[co.r]&&cells[co.r][wc]===CELL.AIR&&!hasBrk(wc,co.r)&&!(co.r>=G-2&&nearSpike(wc,0))) coins.push({c:wc,r:co.r});
+      if (inRange(wc)&&co.r>=0&&cells[co.r]&&cells[co.r][wc]===CELL.AIR&&!hasBrk(wc,co.r)&&!(co.r>=gt-2&&nearSpike(wc,0))) coins.push({c:wc,r:co.r});
     }
     // 8) ذخيرة خاصة بالقطعة
     for (const a of chunk.am){ const wc=off+a.c; if(inRange(wc)&&cells[a.r][wc]===CELL.AIR&&!nearSpike(wc,2)) ammos.push({c:wc,r:a.r}); }
@@ -481,55 +512,52 @@ function generateLevel(n) {
     off+=W;
   }
 
-  // ═══════ المناطق السرية: 3 نجوم مخفية في كل مرحلة ═══════
-  // النوع A (jump):  منصة ظاهرة، وفوقها بـ3 بلاطات رف مخفي تحت غطاء نباتي
-  // النوع B (spring): نابض على الأرض يقذف اللاعب إلى رف عالٍ مخفي
+  // ═══════ المناطق السرية: غرفة مخفية داخل تلّ ترابي (3 نجوم في كل مرحلة) ═══════
+  // التلّ: 4 درجات صاعدة (ارتفاع 1..4) ثم هضبة بارتفاع 5. داخل الهضبة غرفة بعرض 4 + مدخل
+  // على الوجه الأيمن للجرف. الغرفة فراغ حقيقي لكنها تُرسم ترابية حتى يدخلها اللاعب.
   const secrets=[], items=[];
   const zoneCols=(wc)=>secrets.some(z=>wc>=z.c-1&&wc<z.c+z.w+1);
   const inZone = zoneCols;
-  const regionFree=(a,w)=>{
-    const b=a+w-1;
-    if (a<12||b>COLS-34) return false;
-    if (secrets.some(z=>a<z.c+z.w+4&&b>z.c-4)) return false;
-    for (let c=a;c<=b;c++){
-      if (groundTop[c]!==GND_TOP||cells[GND_TOP][c]!==CELL.GND) return false;
-      for (let r=0;r<GND_TOP;r++) if (cells[r][c]!==CELL.AIR) return false;
-      if (nearSpike(c,2)) return false;
+  const MW=10;
+  const canMound=(a,relaxed)=>{
+    const b=a+MW-1;
+    if (a<14||b>COLS-34) return false;
+    if (secrets.some(z=>a<z.mc+MW+4&&b>z.mc-4)) return false;
+    for (let c=a-2;c<=b+3;c++){
+      if (c<1||c>=COLS-1||groundTop[c]!==GND_TOP||cells[GND_TOP][c]!==CELL.GND) return false;
+      if (c>=a&&c<=b){ for (let r=0;r<GND_TOP;r++) if (cells[r][c]!==CELL.AIR && !(relaxed&&cells[r][c]===CELL.PLT)) return false; }
+      else if (cells[GND_TOP-1][c]!==CELL.AIR) return false;
+      if (nearSpike(c,1)) return false;
     }
-    if (breakables.some(k=>k.c>=a-1&&k.c<=b+1)) return false;
-    if (coins.some(k=>k.c>=a&&k.c<=b&&k.r<=G-3)) return false;
-    if (enemies.some(e=>e.fly&&e.c>=a-3&&e.c<=b+3)) return false;
     return true;
   };
-  const addSecret=(a,kind)=>{
-    const id=secrets.length;
-    if (kind==='jump'){
-      for (let c=a+1;c<=a+4;c++) cells[G-3][c]=CELL.PLT;           // المنصة الظاهرة
-      platforms.push({c:a+1,r:G-3,len:4});
-      for (let c=a+1;c<=a+5;c++) cells[G-6][c]=CELL.PLT;           // الرف المخفي
-      secrets.push({id,kind,c:a,r:0,w:7,h:4,starC:a+3,starR:G-7});
-      coins.push({c:a+2,r:G-7},{c:a+4,r:G-7});
-      items.push({type:'gem',c:a+5,r:G-7});
-    } else {
-      cells[G-1][a+4]=CELL.SPRING;                                  // نابض ظاهر
-      for (let i=coins.length-1;i>=0;i--) if (coins[i].c===a+4&&coins[i].r===G-1) coins.splice(i,1);
-      for (let c=a+1;c<=a+7;c++) cells[G-5][c]=CELL.PLT;           // الرف العالي المخفي
-      secrets.push({id,kind,c:a,r:0,w:9,h:5,starC:a+4,starR:G-6});
-      coins.push({c:a+2,r:G-6},{c:a+6,r:G-6});
-      items.push({type:'gem',c:a+7,r:G-6});
-    }
+  const addMound=(a)=>{
+    const b=a+MW-1, id=secrets.length;
+    for (let c=a;c<=b;c++) for (let r=0;r<GND_TOP;r++) if (cells[r][c]===CELL.PLT) cells[r][c]=CELL.AIR;   // نزيل منصات تعيق التلّ
+    for (let i=0;i<MW;i++){ const h=i<4?i+1:5, wc=a+i;
+      for (let r=GND_TOP-h;r<GND_TOP;r++) cells[r][wc]=CELL.GND;
+      groundTop[wc]=GND_TOP-h; }
+    for (let c=a+5;c<=b;c++) for (let r=GND_TOP-4;r<GND_TOP;r++) cells[r][c]=CELL.AIR;   // الغرفة + المدخل
+    const inR=c=>c>=a-1&&c<=b+1;
+    for (const arr of [coins,ammos,decos]) for (let i=arr.length-1;i>=0;i--) if (inR(arr[i].c)) arr.splice(i,1);
+    for (let i=enemies.length-1;i>=0;i--){ const e=enemies[i]; if (inR(e.c)||(e.fly&&e.c>=a-4&&e.c<=b+4)) enemies.splice(i,1); }
+    for (let i=breakables.length-1;i>=0;i--) if (inR(breakables[i].c)) breakables.splice(i,1);
+    for (let i=platforms.length-1;i>=0;i--) if (inR(platforms[i].c)) platforms.splice(i,1);
+    secrets.push({id,kind:'cave',c:a+5,r:GND_TOP-4,w:5,h:4,mc:a,starC:a+7,starR:GND_TOP-2});
+    coins.push({c:a+6,r:GND_TOP-1},{c:a+8,r:GND_TOP-1});
+    items.push({type:'gem',c:a+5,r:GND_TOP-2});
+    for (let c=a+4;c<=b;c++) coins.push({c,r:GND_TOP-6});          // مكافأة صعود التلّ
   };
   {
-    const kinds=[['jump','spring','jump'],['spring','jump','spring'],['jump','jump','spring']][n%3];
-    const lo=12, hi=COLS-34, seg=(hi-lo)/3;
+    const lo=14, hi=COLS-34, seg=(hi-lo)/3;
     for (let k=0;k<3;k++){
-      const kind=kinds[k], w=kind==='jump'?7:9;
       let done=false;
-      for (let pass=0;pass<2&&!done;pass++){
-        const s0=pass===0?Math.floor(lo+seg*k):lo, s1=pass===0?Math.floor(lo+seg*(k+1)):hi;
+      for (let pass=0;pass<4&&!done;pass++){
+        const rx=pass>=2, wide=pass%2===1;
+        const s0=!wide?Math.floor(lo+seg*k):lo, s1=!wide?Math.floor(lo+seg*(k+1)):hi;
         const start=s0+ri(0,5);
-        for (let a=start;a<s1-w;a++){ if (regionFree(a,w)){ addSecret(a,kind); done=true; break; } }
-        if (!done) for (let a=s0;a<start&&a<s1-w;a++){ if (regionFree(a,w)){ addSecret(a,kind); done=true; break; } }
+        for (let a=start;a<s1-MW;a++){ if (canMound(a,rx)){ addMound(a); done=true; break; } }
+        if (!done) for (let a=s0;a<start&&a<s1-MW;a++){ if (canMound(a,rx)){ addMound(a); done=true; break; } }
       }
     }
   }
