@@ -176,7 +176,33 @@ const SFX = (() => {
     }
   }
 
+  // أصوات مولَّدة برمجياً (لا تحتاج ملفات)
+  function synth(kind, n) {
+    if (muted) return;
+    try {
+      const ac = getAC(), t0 = ac.currentTime;
+      const tone = (f0, f1, st, dur, type, vol) => {
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.type = type || 'sine';
+        o.frequency.setValueAtTime(f0, t0 + st);
+        if (f1) o.frequency.exponentialRampToValueAtTime(f1, t0 + st + dur);
+        g.gain.setValueAtTime(0.0001, t0 + st);
+        g.gain.exponentialRampToValueAtTime(vol || 0.18, t0 + st + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + st + dur);
+        o.connect(g); g.connect(ac.destination);
+        o.start(t0 + st); o.stop(t0 + st + dur + 0.05);
+      };
+      if (kind === 'secret')      [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0, i * 0.07, 0.25, 'triangle', 0.2));
+      else if (kind === 'star')   { [988, 1319, 1568, 1976, 2637].forEach((f, i) => tone(f, 0, i * 0.06, 0.3, 'sine', 0.2)); }
+      else if (kind === 'gem')    { tone(1175, 0, 0, 0.12, 'sine', 0.2); tone(1760, 0, 0.09, 0.25, 'sine', 0.2); }
+      else if (kind === 'power')  { tone(300, 900, 0, 0.3, 'square', 0.09); tone(600, 1200, 0.12, 0.25, 'triangle', 0.15); }
+      else if (kind === 'shield_break') { tone(700, 120, 0, 0.35, 'sawtooth', 0.12); }
+      else if (kind === 'combo')  { tone(440 * Math.pow(1.122, Math.min(n || 2, 6)), 0, 0, 0.18, 'square', 0.08); }
+    } catch (e) {}
+  }
+
   return {
+    synth,
     play(name, vol) {
       if (muted || !MAP[name]) return;
       if (!playAC(name, vol)) playPool(name, vol);
@@ -217,6 +243,7 @@ const GS = {
   unlockedWorlds: [],  // عوالم مفتوحة بالشراء
   speedBoost: false,
   worldProgress: { 1:0, 2:0, 3:0, 4:0 }, // completed levels per world
+  stars: {},   // أفضل نجوم سرية لكل مرحلة (bitmask: 1/2/4)
 };
 
 // ── SESSION STATE ──
@@ -239,6 +266,11 @@ let enemies    = [];
 let bullets    = [];
 let particles  = [];
 let crumbleTiles = []; // tiles that crumble when stepped on
+let secrets = [];      // مناطق سرية {x,y,w,h,revealed,a,cv}
+let movers  = [];      // منصات متحركة (float_platform)
+let popups  = [];      // نصوص عائمة (نقاط/كومبو)
+let lvStars = [false, false, false]; // النجوم السرية المجموعة في هذه المرحلة
+let _powKey = '';
 let player     = {};
 let camera     = { x: 0, y: 0 };
 const keys = { left:false, right:false };
@@ -266,6 +298,8 @@ const PROP_FILES = [
   'Plant thorns1.png','Plant thorns2.png','ThornsGraveyard1.png','ThornsGraveyard2.png',
   'Ice Thorns1.png','Ice Thorns2.png','Desert Thorns1.png','Desert Thorns2.png',
   'nabid1.png','nabid2.png','nabid3.png','nabid4.png',
+  // أجسام جديدة (صور اختيارية — يوجد بديل برمجي لكل منها)
+  'star_secret.png','gem.png','magnet.png','shield.png','float_platform.png',
 ];
 function loadProps() {
   for (const f of PROP_FILES) {
@@ -392,6 +426,7 @@ function saveLocal() {
       sp: GS.speedBoost,
       wp: GS.worldProgress,
       uw: GS.unlockedWorlds,
+      st: GS.stars,
       ts: Date.now()
     }));
   } catch(e) {}
@@ -408,6 +443,7 @@ function loadLocal() {
     GS.speedBoost    = d.sp || false;
     GS.worldProgress = d.wp || { 1:0, 2:0, 3:0, 4:0 };
     GS.unlockedWorlds= d.uw || [];
+    GS.stars         = d.st || {};
     console.log('[Save] Loaded from localStorage ✓');
   } catch(e) {}
 }
@@ -964,6 +1000,8 @@ function buildLevelGrid(wid) {
 
     if (unlocked) {
       btn.textContent = lv - startLv + 1;
+      const _m = (GS.stars || {})[lv] || 0;
+      if (_m) { const sp = document.createElement('span'); sp.className = 'lv-st'; sp.textContent = [1, 2, 4].map(b => (_m & b) ? '★' : '☆').join(''); btn.appendChild(sp); }
       btn.onclick = () => startLevel(lv);
     } else {
       btn.textContent = '🔒';
@@ -988,6 +1026,9 @@ function startLevel(n) {
   bullets    = [];
   particles  = [];
   crumbleTiles = [];
+  secrets = []; movers = []; popups = [];
+  lvStars = [false, false, false]; _powKey = '';
+  const _hp = document.getElementById('hPow'); if (_hp) _hp.innerHTML = '';
 
   setupRotation();
   buildWorld(ld);
@@ -1045,7 +1086,7 @@ function buildWorld(ld) {
   for (const b of breakables) {
     const bx = b.c * TS, by = b.r * TS;
     const pIdx = pickups.length;
-    pickups.push({ x:bx, y:by, w:TS, h:TS, type:'breakable', done:false, hasHeart:b.hasHeart, hasCoin:b.hasCoin, col:b.c, row:b.r });
+    pickups.push({ x:bx, y:by, w:TS, h:TS, type:'breakable', done:false, hasHeart:b.hasHeart, hasCoin:b.hasCoin, hasItem:b.hasItem, col:b.c, row:b.r });
     solidTiles.push({ x:bx, y:by, w:TS, h:TS, type:T.GND, row:b.r, col:b.c, isBreakable:true, pickupIdx:pIdx });
   }
 
@@ -1096,6 +1137,23 @@ function buildWorld(ld) {
       baseY: e.r * TS,
     });
   }
+
+  // ── المناطق السرية + النجوم ──
+  secrets = [];
+  (ld.secrets || []).forEach((z, i) => {
+    secrets.push({ id:i, x:z.c*TS, y:z.r*TS, w:z.w*TS, h:z.h*TS, revealed:false, a:1, cv:null,
+                   seed:(z.c * 131 + i * 977 + ld.cols) >>> 0, theme:ld.theme });
+    pickups.push({ x:z.starC*TS + 2, y:z.starR*TS + 2, w:28, h:28, type:'star', zone:i, done:false });
+  });
+  // ── عناصر (جواهر ...) ──
+  for (const it of (ld.items || [])) pickups.push({ x:it.c*TS + 4, y:it.r*TS + 4, w:24, h:24, type:it.type, done:false });
+  // ── منصات متحركة ──
+  movers = (ld.movers || []).map(m => {
+    const x0 = m.c * TS, x1 = (m.c + m.span - m.len) * TS;
+    const t = { x:x0, y:m.r*TS, w:m.len*TS, h:TS, type:T.PLT, mover:true, row:m.r, col:m.c, x0, x1, ph:m.phase, sp:m.speed*0.025, dx:0 };
+    solidTiles.push(t);
+    return t;
+  });
 
   // Decorative objects (no collision)
   window._decos = decos;
@@ -1156,13 +1214,17 @@ function loop(ts) {
 }
 
 function update(dt) {
+  updMovers(dt);
   updPlayer(dt);
   updEnemies(dt);
   updBullets(dt);
   updCrumbles(dt);
   checkPickups();
+  updSecrets(dt);
+  updItems(dt);
   updParticles(dt);
   updCamera();
+  updPowHUD();
 }
 
 // ── PLAYER UPDATE ──
@@ -1218,10 +1280,12 @@ function updPlayer(dt) {
   player._prevY = player.y;   // حفظ الموقع قبل التحرك
   player.y += player.vy * dt;
   player.onGnd = false;
+  player._ride = null;
   collideY(player);
 
   // حفظ checkpoint عند الوقوف على الأرض الصلبة (ليس فوق فجوة)
   if (player.onGnd && !player.dead) {
+    player._combo = 0;
     if (isSafeSpot()) { checkpoint.x = player.x; checkpoint.y = player.y; }
     player._gapEnabled = true; // تفعيل كشف الفجوة بعد أول لمسة للأرض
     // صوت الهبوط عند الوصول للأرض (فقط إذا كان يسقط بسرعة)
@@ -1328,6 +1392,7 @@ function collideY(obj) {
         obj.y  = t.y - obj.h;
         obj.vy = 0;
         obj.onGnd = true;
+        obj._ride = t;
       }
       continue; // المرور من الأسفل والجوانب دائماً
     }
@@ -1370,6 +1435,10 @@ function breakBlock(tile) {
       updHUD();
       SFX.play('heart');
       spawnHeartPopup(tile.x - camera.x + TS/2, tile.y);
+    } else if (pk.hasItem) {
+      // عنصر قوة (درع/مغناطيس) يطفو من الكتلة
+      pickups.push({ x: tile.x + 4, y: tile.y, w:24, h:24, type: pk.hasItem, done:false, rise: 34 });
+      SFX.synth('power');
     } else if (pk.hasCoin) {
       // عملة مخفية — تطفو للأعلى ثم تُجمع
       const cs = Math.round(TS * 0.7);
@@ -1411,6 +1480,17 @@ function checkPickups() {
   if (player.dead) return;
   for (const p of pickups) if (p.type === 'spring') { if (p.cool > 0) p.cool--; if (p.animT >= 0) p.animT++; }
 
+  // مغناطيس: يجذب العملات القريبة
+  if (player.magnet > 0) {
+    player.magnet--;
+    const mx = player.x + player.w / 2, my = player.y + player.h / 2;
+    for (const p of pickups) {
+      if (p.done || p.type !== 'coin') continue;
+      const dx = mx - (p.x + p.w / 2), dy = my - (p.y + p.h / 2), d = Math.hypot(dx, dy);
+      if (d < 190 && d > 1) { p.x += dx / d * 7; p.y += dy / d * 7; }
+    }
+  }
+
   for (const p of pickups) {
     if (p.done) continue;
     if (!overlaps(player, p, 6)) continue;
@@ -1426,6 +1506,19 @@ function checkPickups() {
       p.done = true;
       curAmmo = Math.min(curAmmo + 3, 30);
       updAmmo();
+    } else if (p.type === 'star') {
+      if (!secrets[p.zone] || !secrets[p.zone].revealed) continue;   // مخفية حتى دخول المنطقة السرية
+      p.done = true; collectStar(p);
+    } else if (p.type === 'gem') {
+      p.done = true; lvCoins += 10; GS.coins += 10; lvScore += 500;
+      SFX.synth('gem'); addPopup(p.x + 12, p.y, '+500', '#4DD0E1'); sparkle(p.x + 12, p.y + 12, '#4DD0E1', 10);
+      updHUD();
+    } else if (p.type === 'magnet') {
+      p.done = true; player.magnet = 900;
+      SFX.synth('power'); addPopup(p.x + 12, p.y, 'MAGNET!', '#FF5252'); sparkle(p.x + 12, p.y + 12, '#FF5252', 10);
+    } else if (p.type === 'shield') {
+      p.done = true; player.shield = true;
+      SFX.synth('power'); addPopup(p.x + 12, p.y, 'SHIELD!', '#64B5F6'); sparkle(p.x + 12, p.y + 12, '#64B5F6', 10);
     } else if (p.type === 'goal') {
       triggerWin();
       return;
@@ -1449,7 +1542,11 @@ function checkPickups() {
       // Jump on top of enemy
       if (player.vy > 0 && player.y + player.h < e.y + e.h * 0.6) {
         e.dead = true;
-        lvScore += 100;
+        player._combo = (player._combo || 0) + 1;
+        const pts = 100 * Math.min(player._combo, 5);
+        lvScore += pts;
+        addPopup(e.x + e.w / 2, e.y, '+' + pts + (player._combo > 1 ? '  x' + player._combo : ''), player._combo > 1 ? '#FF9800' : '#FFFFFF');
+        if (player._combo >= 2) SFX.synth('combo', player._combo);
         SFX.play('stomp');
         SFX.play('enemy_die', 0.6);
         playEnemyDeathSound(e.type);
@@ -1465,6 +1562,7 @@ function checkPickups() {
 
 function hurtPlayer() {
   if (player.inv || player.dead) return;
+  if (player.shield) { breakShield(); return; }
   SFX.play('hurt');
   player.inv  = true;
   player.invT = 120; // 120 frames ≈ 2 ثانية حصانة
@@ -1477,6 +1575,7 @@ function hurtPlayer() {
 // موت الأشواك: يخصم قلباً ويشغّل صوت الموت (لو بقيت قلوب يعود اللاعب لآخر نقطة)
 function spikeDeath() {
   if (player.dead) return;
+  if (player.shield) { breakShield(); player.vy = JSPD * 0.9; player.onGnd = false; return; }
   GS.lives = Math.max(0, GS.lives - 1);
   updHUD(); saveLocal();
   SFX.play(GS.lives > 0 ? 'lose' : 'hurt');   // عند 0 قلوب يُشغَّل صوت الخسارة من شاشة النهاية
@@ -1701,11 +1800,14 @@ function render() {
   ctx.translate(-camera.x, -camera.y);
   drawDecos();
   drawTiles();
+  drawMovers();
   drawPickups();
   drawEnemies();
   drawBullets();
   drawPlayer();
+  drawSecretCovers();
   drawParticles();
+  drawPopups();
   ctx.restore();
 }
 
@@ -1819,6 +1921,7 @@ function drawTiles() {
   const W = parseInt(canvas.style.width)||canvas.width, H = parseInt(canvas.style.height)||canvas.height;
 
   for (const t of solidTiles) {
+    if (t.mover) continue;   // تُرسم في drawMovers
     if (t.x - camera.x > W + TS || t.x + t.w - camera.x < -TS) continue;
     if (t.y - camera.y > H + TS || t.y + t.h - camera.y < -TS) continue;
 
@@ -2031,6 +2134,9 @@ function drawPickups() {
           ctx.closePath(); ctx.fill();
         }
       }
+    } else if (p.type === 'star' || p.type === 'gem' || p.type === 'magnet' || p.type === 'shield') {
+      if (p.type === 'star' && !(secrets[p.zone] && secrets[p.zone].revealed)) continue;
+      drawItemPick(p);
     } else if (p.type === 'spring') {
       drawSpring(p);
     } else if (p.type === 'breakable') {
@@ -2219,6 +2325,18 @@ function drawPlayer() {
     _drawPlayerInner();
     ctx.restore();
   } else _drawPlayerInner();
+  if (!player.dead) drawShieldBubble();
+}
+function drawShieldBubble() {
+  if (!player.shield) return;
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2, t = Date.now() * 0.005;
+  const r = 66 + Math.sin(t) * 2.5;
+  const g = ctx.createRadialGradient(cx - 14, cy - 20, 8, cx, cy, r);
+  g.addColorStop(0, 'rgba(255,255,255,0.28)'); g.addColorStop(0.75, 'rgba(100,181,246,0.20)'); g.addColorStop(1, 'rgba(100,181,246,0.55)');
+  ctx.save();
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(190,225,255,0.9)'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
 }
 function _drawPlayerInner() {
   // Invincibility blink
@@ -2298,6 +2416,187 @@ function spawnCoinParticle(screenX, screenY) {
 }
 
 // ── CONTROLS ──
+// ══════════════════════════════════════════════════════
+//  أنظمة جديدة: مناطق سرية • نجوم • جواهر • درع • مغناطيس
+//  منصات متحركة • نقاط عائمة • كومبو
+// ══════════════════════════════════════════════════════
+function addPopup(x, y, text, color) { popups.push({ x, y, text, color: color || '#fff', life: 60 }); }
+
+function sparkle(x, y, color, n) {
+  for (let i = 0; i < (n || 10); i++) {
+    const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 3.5;
+    particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 1.5, size: 3 + Math.random() * 4,
+                     color, life: 28 + Math.random() * 16, maxLife: 44 });
+  }
+}
+
+function collectStar(p) {
+  lvStars[p.zone] = true;
+  lvScore += 1000; lvCoins += 10; GS.coins += 10;
+  SFX.synth('star');
+  addPopup(p.x + 14, p.y - 6, '★ +1000', '#FFEB3B');
+  sparkle(p.x + 14, p.y + 14, '#FFEB3B', 18);
+  updHUD();
+}
+
+function breakShield() {
+  player.shield = false; player.inv = true; player.invT = 90;
+  SFX.synth('shield_break');
+  addPopup(player.x + player.w / 2, player.y - 10, 'BLOCKED!', '#90CAF9');
+  sparkle(player.x + player.w / 2, player.y + player.h / 2, '#90CAF9', 16);
+}
+
+function updMovers(dt) {
+  for (const m of movers) {
+    m.ph += m.sp * dt;
+    const nx = m.x0 + (m.x1 - m.x0) * (0.5 - 0.5 * Math.cos(m.ph));
+    m.dx = nx - m.x;
+    m.x = nx;
+    if (player._ride === m && !player.dead) player.x += m.dx;   // يحمل اللاعب معه
+  }
+}
+
+function updSecrets(dt) {
+  if (player.dead) return;
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+  for (const z of secrets) {
+    if (!z.revealed) {
+      if (cx > z.x && cx < z.x + z.w && cy > z.y && cy < z.y + z.h - 45) {
+        z.revealed = true;
+        SFX.synth('secret');
+        addPopup(cx, player.y - 24, 'SECRET AREA!', '#FFE082');
+        for (let i = 0; i < 14; i++) sparkle(z.x + Math.random() * z.w, z.y + Math.random() * z.h, '#FFF59D', 1);
+      }
+    } else if (z.a > 0) z.a = Math.max(0, z.a - dt / 30);
+  }
+}
+
+function updItems(dt) {
+  for (const p of pickups) if (p.rise > 0 && !p.done) { p.y -= 1.5 * dt; p.rise -= 1.5 * dt; }
+  for (let i = popups.length - 1; i >= 0; i--) {
+    const q = popups[i]; q.y -= 0.7 * dt; q.life -= dt;
+    if (q.life <= 0) popups.splice(i, 1);
+  }
+}
+
+function updPowHUD() {
+  const el = document.getElementById('hPow'); if (!el) return;
+  const m = player.magnet > 0 ? Math.ceil(player.magnet / 60) : 0, sh = !!player.shield;
+  const key = m + '|' + sh;
+  if (key === _powKey) return;
+  _powKey = key;
+  el.innerHTML = (m ? `<div class="pw">🧲 ${m}s</div>` : '') + (sh ? '<div class="pw">🛡️</div>' : '');
+}
+
+// ── رسم الغطاء النباتي للمنطقة السرية (يُرسم مرة واحدة في canvas مؤقت) ──
+const COVER_COL = {
+  nature:    ['#1B5E20', '#2E7D32', '#66BB6A'],
+  graveyard: ['#263238', '#455A64', '#78909C'],
+  winter:    ['#5C8FC9', '#A9D1F5', '#F4FAFF'],
+  desert:    ['#BF360C', '#E65100', '#FFB74D'],
+};
+function makeCover(z) {
+  const pad = 20, cv = document.createElement('canvas');
+  cv.width = z.w + pad * 2; cv.height = z.h + pad * 2;
+  const g = cv.getContext('2d'), col = COVER_COL[z.theme] || COVER_COL.nature;
+  let s = z.seed || 1; const R = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  const puffs = [];
+  for (let y = -2; y <= z.h + 2; y += 15) for (let x = -2; x <= z.w + 2; x += 15)
+    puffs.push([x + pad + (R() - 0.5) * 12, y + pad + (R() - 0.5) * 12, 19 + R() * 9]);
+  for (let layer = 0; layer < 3; layer++) {
+    g.fillStyle = col[layer];
+    for (const [x, y, r] of puffs) { g.beginPath(); g.arc(x - layer * 3, y - layer * 4, Math.max(6, r - layer * 6), 0, Math.PI * 2); g.fill(); }
+  }
+  z.cv = cv; z.pad = pad;
+}
+function drawSecretCovers() {
+  const W = parseInt(canvas.style.width) || canvas.width;
+  const tm = Date.now() * 0.004;
+  for (const z of secrets) {
+    if (z.a <= 0) continue;
+    if (z.x - camera.x > W + 40 || z.x + z.w - camera.x < -40) continue;
+    if (!z.cv) makeCover(z);
+    ctx.globalAlpha = z.a;
+    ctx.drawImage(z.cv, z.x - z.pad, z.y - z.pad);
+    // لمعة خفيفة تلمّح بوجود سرّ
+    if (!z.revealed) {
+      for (let i = 0; i < 2; i++) {
+        const k = (Math.sin(tm + z.id * 2 + i * 3) + 1) / 2;
+        const gx = z.x + z.w * (0.25 + 0.5 * i), gy = z.y + z.h * (0.35 + 0.25 * i), r = 3 + k * 6;
+        ctx.fillStyle = `rgba(255,255,255,${0.2 + k * 0.7})`;
+        ctx.beginPath();
+        ctx.moveTo(gx, gy - r); ctx.lineTo(gx + r * 0.3, gy - r * 0.3); ctx.lineTo(gx + r, gy); ctx.lineTo(gx + r * 0.3, gy + r * 0.3);
+        ctx.lineTo(gx, gy + r); ctx.lineTo(gx - r * 0.3, gy + r * 0.3); ctx.lineTo(gx - r, gy); ctx.lineTo(gx - r * 0.3, gy - r * 0.3);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ── المنصات المتحركة: صورة float_platform.png أو رسم برمجي ──
+function drawMovers() {
+  const W = parseInt(canvas.style.width) || canvas.width;
+  const theme = LEVELS[GS.curLevel]?.theme || 'nature';
+  const pc = { nature:['#8D6E63','#4CAF50'], graveyard:['#546E7A','#7E57C2'], winter:['#90CAF9','#E3F2FD'], desert:['#D7A86E','#FF8F00'] }[theme];
+  for (const m of movers) {
+    if (m.x - camera.x > W + 40 || m.x + m.w - camera.x < -40) continue;
+    const img = PROPS['float_platform.png'];
+    if (imgOK(img)) {
+      ctx.drawImage(img, m.x, m.y - 2, m.w, Math.round(m.w * img.naturalHeight / img.naturalWidth));
+    } else {
+      ctx.fillStyle = pc[0]; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(m.x, m.y, m.w, 20, 8); else ctx.rect(m.x, m.y, m.w, 20); ctx.fill();
+      ctx.fillStyle = pc[1]; ctx.fillRect(m.x + 3, m.y, m.w - 6, 6);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(m.x + 4, m.y + 14, m.w - 8, 4);
+      for (let i = 0; i < 3; i++) { ctx.fillStyle = '#FFD54F'; ctx.beginPath(); ctx.arc(m.x + 14 + i * (m.w - 28) / 2, m.y + 11, 2.5, 0, Math.PI * 2); ctx.fill(); }
+      const f = 4 + Math.sin(Date.now() * 0.02) * 2;
+      ctx.fillStyle = 'rgba(255,193,7,0.6)'; ctx.fillRect(m.x + m.w / 2 - 6, m.y + 20, 12, f);
+    }
+  }
+}
+
+const ITEM_FILES = { star:'star_secret.png', gem:'gem.png', magnet:'magnet.png', shield:'shield.png' };
+function _poly(pts) { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); }
+function drawItemPick(p) {
+  const tm = Date.now() * 0.004 + p.x * 0.02;
+  const cx = p.x + p.w / 2, cy = p.y + p.h / 2 + Math.sin(tm) * 3;
+  const sz = p.type === 'star' ? 40 : 32;
+  const gc = { star:'255,235,59', gem:'77,208,225', magnet:'255,82,82', shield:'100,181,246' }[p.type];
+  const gr = ctx.createRadialGradient(cx, cy, 2, cx, cy, sz);
+  gr.addColorStop(0, `rgba(${gc},0.55)`); gr.addColorStop(1, `rgba(${gc},0)`);
+  ctx.fillStyle = gr; ctx.fillRect(cx - sz, cy - sz, sz * 2, sz * 2);
+  const img = PROPS[ITEM_FILES[p.type]];
+  if (imgOK(img)) { ctx.drawImage(img, cx - sz / 2, cy - sz / 2, sz, sz); return; }
+  ctx.save(); ctx.translate(cx, cy); ctx.lineJoin = 'round'; ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  if (p.type === 'star') {
+    ctx.rotate(Math.sin(tm) * 0.15);
+    const pts = []; for (let i = 0; i < 10; i++) { const r = i % 2 ? 8 : 19, a = -Math.PI / 2 + i * Math.PI / 5; pts.push([Math.cos(a) * r, Math.sin(a) * r]); }
+    _poly(pts); ctx.fillStyle = '#FFD600'; ctx.fill(); ctx.stroke();
+    _poly(pts.map(([x, y]) => [x * 0.5, y * 0.5])); ctx.fillStyle = '#FFF59D'; ctx.fill();
+  } else if (p.type === 'gem') {
+    ctx.scale(Math.abs(Math.cos(tm * 0.8)) * 0.4 + 0.6, 1);
+    _poly([[0, -14], [12, -4], [0, 14], [-12, -4]]); ctx.fillStyle = '#26C6DA'; ctx.fill(); ctx.stroke();
+    _poly([[0, -14], [12, -4], [0, -2], [-12, -4]]); ctx.fillStyle = '#B2EBF2'; ctx.fill();
+  } else if (p.type === 'magnet') {
+    ctx.lineWidth = 7; ctx.lineCap = 'butt';
+    ctx.strokeStyle = '#E53935'; ctx.beginPath(); ctx.arc(0, 2, 9, Math.PI, 0); ctx.lineTo(9, 12); ctx.moveTo(-9, 2); ctx.lineTo(-9, 12); ctx.stroke();
+    ctx.strokeStyle = '#ECEFF1'; ctx.beginPath(); ctx.moveTo(-9, 12); ctx.lineTo(-9, 16); ctx.moveTo(9, 12); ctx.lineTo(9, 16); ctx.stroke();
+  } else {
+    _poly([[0, -15], [13, -9], [11, 6], [0, 16], [-11, 6], [-13, -9]]); ctx.fillStyle = '#42A5F5'; ctx.fill(); ctx.stroke();
+    _poly([[0, -10], [8, -6], [7, 4], [0, 11]]); ctx.fillStyle = '#BBDEFB'; ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawPopups() {
+  ctx.save(); ctx.font = '800 16px sans-serif'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+  for (const q of popups) {
+    ctx.globalAlpha = Math.min(1, q.life / 25);
+    ctx.strokeText(q.text, q.x, q.y); ctx.fillStyle = q.color; ctx.fillText(q.text, q.x, q.y);
+  }
+  ctx.restore();
+}
+
 function kd(k, dn) {
   keys[k] = dn;
   const el = document.getElementById(k === 'left' ? 'btnL' : 'btnR');
@@ -2354,6 +2653,7 @@ function updHUD() {
   document.getElementById('hLives').textContent = GS.lives;
   document.getElementById('hScore').textContent = lvScore;
   document.getElementById('hCoins').textContent = GS.coins;
+  for (let i = 0; i < 3; i++) { const e = document.getElementById('hSt' + i); if (e) e.classList.toggle('on', !!lvStars[i]); }
 }
 
 function updAmmo() {
@@ -2454,11 +2754,18 @@ function finishWin(playArrival) {
     const wid = LEVELS[GS.curLevel].world;
     GS.worldProgress[wid] = Math.min((GS.worldProgress[wid] || 0) + 1, 25);
   }
+  // النجوم السرية: حفظ الأفضل + مكافأة قلب عند جمع الثلاث لأول مرة
+  GS.stars = GS.stars || {};
+  const _mask = (lvStars[0] ? 1 : 0) | (lvStars[1] ? 2 : 0) | (lvStars[2] ? 4 : 0);
+  const _prev = GS.stars[GS.curLevel] || 0;
+  GS.stars[GS.curLevel] = _prev | _mask;
+  let _bonusTxt = '';
+  if ((_prev | _mask) === 7 && _prev !== 7) { GS.lives = Math.min(GS.lives + 1, 99); _bonusTxt = '  |  ❤️ +1'; }
   saveLocal(); cloudSave();
 
   const pct = lvTimer / (LEVELS[GS.curLevel].time || 120);
-  document.getElementById('winStars').textContent = pct > 0.6 ? '⭐⭐⭐' : pct > 0.3 ? '⭐⭐' : '⭐';
-  document.getElementById('winScore').textContent = `⭐ ${lvScore}  |  🪙 ${lvCoins}`;
+  document.getElementById('winStars').textContent = lvStars.map(f => f ? '⭐' : '☆').join('');
+  document.getElementById('winScore').textContent = `🏅 ${lvScore}  |  🪙 ${lvCoins}${_bonusTxt}`;
 
   setTimeout(() => showScreen('winScreen'), 500);
 }

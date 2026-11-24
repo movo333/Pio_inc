@@ -415,14 +415,18 @@ function generateLevel(n) {
     cells[r][wc]=v; return true;
   };
 
-  let off=8;
+  let off=8, ci=0;
+  const movers=[];
   for (const chunk of chunks){
     const W=chunk.w;
+    const ctype=plan.seq[ci++];
     // 1) فجوات
     for (const g of chunk.ga){
       const a=g.c, b=Math.min(g.c+g.len,W-1);
       for (let gc=a;gc<b;gc++){ for(let r=GND_TOP;r<ROWS;r++) cells[r][off+gc]=CELL.AIR; groundTop[off+gc]=null; }
       gaps.push({c:off+a,len:b-a});
+      // عبّارة متحركة تعبر الحفر العريضة (جسم جديد: float_platform)
+      if (ctype==='pit' && diff>=3 && b-a>=8) movers.push({c:off+a, len:3, span:b-a, r:G-1, speed:0.9+rand()*0.5, phase:rand()*6.28});
     }
     // 2) تلال/أعمدة (ارتفاع الأرض)
     for (const h of chunk.hl){
@@ -477,13 +481,66 @@ function generateLevel(n) {
     off+=W;
   }
 
+  // ═══════ المناطق السرية: 3 نجوم مخفية في كل مرحلة ═══════
+  // النوع A (jump):  منصة ظاهرة، وفوقها بـ3 بلاطات رف مخفي تحت غطاء نباتي
+  // النوع B (spring): نابض على الأرض يقذف اللاعب إلى رف عالٍ مخفي
+  const secrets=[], items=[];
+  const zoneCols=(wc)=>secrets.some(z=>wc>=z.c-1&&wc<z.c+z.w+1);
+  const inZone = zoneCols;
+  const regionFree=(a,w)=>{
+    const b=a+w-1;
+    if (a<12||b>COLS-34) return false;
+    if (secrets.some(z=>a<z.c+z.w+4&&b>z.c-4)) return false;
+    for (let c=a;c<=b;c++){
+      if (groundTop[c]!==GND_TOP||cells[GND_TOP][c]!==CELL.GND) return false;
+      for (let r=0;r<GND_TOP;r++) if (cells[r][c]!==CELL.AIR) return false;
+      if (nearSpike(c,2)) return false;
+    }
+    if (breakables.some(k=>k.c>=a-1&&k.c<=b+1)) return false;
+    if (coins.some(k=>k.c>=a&&k.c<=b&&k.r<=G-3)) return false;
+    if (enemies.some(e=>e.fly&&e.c>=a-3&&e.c<=b+3)) return false;
+    return true;
+  };
+  const addSecret=(a,kind)=>{
+    const id=secrets.length;
+    if (kind==='jump'){
+      for (let c=a+1;c<=a+4;c++) cells[G-3][c]=CELL.PLT;           // المنصة الظاهرة
+      platforms.push({c:a+1,r:G-3,len:4});
+      for (let c=a+1;c<=a+5;c++) cells[G-6][c]=CELL.PLT;           // الرف المخفي
+      secrets.push({id,kind,c:a,r:0,w:7,h:4,starC:a+3,starR:G-7});
+      coins.push({c:a+2,r:G-7},{c:a+4,r:G-7});
+      items.push({type:'gem',c:a+5,r:G-7});
+    } else {
+      cells[G-1][a+4]=CELL.SPRING;                                  // نابض ظاهر
+      for (let i=coins.length-1;i>=0;i--) if (coins[i].c===a+4&&coins[i].r===G-1) coins.splice(i,1);
+      for (let c=a+1;c<=a+7;c++) cells[G-5][c]=CELL.PLT;           // الرف العالي المخفي
+      secrets.push({id,kind,c:a,r:0,w:9,h:5,starC:a+4,starR:G-6});
+      coins.push({c:a+2,r:G-6},{c:a+6,r:G-6});
+      items.push({type:'gem',c:a+7,r:G-6});
+    }
+  };
+  {
+    const kinds=[['jump','spring','jump'],['spring','jump','spring'],['jump','jump','spring']][n%3];
+    const lo=12, hi=COLS-34, seg=(hi-lo)/3;
+    for (let k=0;k<3;k++){
+      const kind=kinds[k], w=kind==='jump'?7:9;
+      let done=false;
+      for (let pass=0;pass<2&&!done;pass++){
+        const s0=pass===0?Math.floor(lo+seg*k):lo, s1=pass===0?Math.floor(lo+seg*(k+1)):hi;
+        const start=s0+ri(0,5);
+        for (let a=start;a<s1-w;a++){ if (regionFree(a,w)){ addSecret(a,kind); done=true; break; } }
+        if (!done) for (let a=s0;a<start&&a<s1-w;a++){ if (regionFree(a,w)){ addSecret(a,kind); done=true; break; } }
+      }
+    }
+  }
+
   // ضمان 3 قلوب بالضبط: أضف كتلاً احتياطية إن قلّت
   const flatAt = c => c>3&&c<COLS-24&&groundTop[c]!==null&&groundTop[c-1]===groundTop[c]&&groundTop[c+1]===groundTop[c];
   for (let c=14;c<COLS-30 && breakables.length<6;c+=11){
     for (const d of [0,1,2,3]){
       const wc=c+d; if(!flatAt(wc)) continue;
       const r=groundTop[wc]-5;
-      if (r>=0&&cells[r][wc]===CELL.AIR&&!hasBrk(wc,r)){ breakables.push({c:wc,r,hasHeart:false,hasCoin:rand()<0.4}); break; }
+      if (r>=0&&cells[r][wc]===CELL.AIR&&!hasBrk(wc,r)&&!inZone(wc)){ breakables.push({c:wc,r,hasHeart:false,hasCoin:rand()<0.4}); break; }
     }
   }
   const heartCount = breakables.filter(b=>b.hasHeart).length;
@@ -494,6 +551,16 @@ function generateLevel(n) {
     for (let i=0;i<cand.length&&toAdd>0;i++){ if(!cand[i].hasHeart){ cand[i].hasHeart=true; cand[i].hasCoin=false; toAdd--; } }
   } else if (heartCount>3){
     let kept=0; for (const b of breakables) if(b.hasHeart){ if(kept<3) kept++; else b.hasHeart=false; }
+  }
+
+  // عناصر قوة داخل الكتل: درع + مغناطيس (من الصعوبة 2 فما فوق)
+  if (diff>=2){
+    const plain=breakables.filter(b=>!b.hasHeart);
+    const want=['shield','magnet'];
+    for (let i=0;i<want.length&&plain.length>0;i++){
+      const b=plain.splice(Math.floor(rand()*plain.length),1)[0];
+      b.hasItem=want[i]; b.hasCoin=false;
+    }
   }
 
   // ذخيرة منتظمة (على سطح الأرض الفعلي)
@@ -517,6 +584,7 @@ function generateLevel(n) {
     cols:COLS, rows:ROWS, gndRow:GND_TOP,
     cells, platforms, breakables, coins, gaps, enemies, ammos, decos,
     spikeGroups, spikes:[], springs:[], traps:[],
+    secrets, items, movers,
     goal:{c:COLS-21,r:GND_TOP-1},
     castle:{c:COLS-9},
     startCol:1, startRow:GND_TOP-1,
