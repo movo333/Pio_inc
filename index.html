@@ -147,6 +147,15 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
 .timer{font-size:18px;font-weight:900;color:#FFD700;min-width:36px;text-align:center;}
 .timer.low{color:#FF4444;animation:pulseAnim .5s infinite;}
 
+
+/* ── النجوم السرية / عناصر القوة ── */
+#hStars{gap:1px;}
+#hStars .st{font-size:17px !important;color:#fff;opacity:.28;filter:grayscale(1);transition:all .3s;}
+#hStars .st.on{color:#FFD600;opacity:1;filter:none;text-shadow:0 0 8px #FFD600;transform:scale(1.2);}
+#hPow{position:absolute;top:44px;left:10px;display:flex;gap:6px;pointer-events:none;}
+#hPow .pw{background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.35);border-radius:12px;padding:2px 8px;color:#fff;font-size:12px;font-weight:800;}
+.lv-st{display:block;font-size:8px;line-height:1;color:#FFD600;letter-spacing:1px;margin-top:1px;}
+
 /* ── AMMO DISPLAY ── */
 #ctrl-ammo{
   position:absolute;bottom:88px;right:14px;
@@ -684,10 +693,12 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Ar
       <div class="hud-bar">
         <button class="pause-btn" onclick="pauseGame()">⏸</button>
         <div class="hi"><span>❤️</span><span id="hLives">3</span></div>
-        <div class="hi"><span>⭐</span><span id="hScore">0</span></div>
+        <div class="hi"><span>🏅</span><span id="hScore">0</span></div>
+        <div class="hi" id="hStars"><span class="st" id="hSt0">★</span><span class="st" id="hSt1">★</span><span class="st" id="hSt2">★</span></div>
         <div class="timer" id="hTimer">120</div>
         <div class="hi"><img id="hudCoinImg" src="assets/buttons/coin.png" style="width:20px;height:20px;vertical-align:middle;margin-right:2px;" onerror="this.style.display='none';this.nextSibling.style.display=''"><span style="display:none">🪙</span><span id="hCoins">0</span></div>
       </div>
+      <div id="hPow"></div>
     </div>
 
     <!-- Ammo -->
