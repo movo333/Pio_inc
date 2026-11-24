@@ -1,6 +1,6 @@
 'use strict';
 
-const WORLD_THEMES = ['nature', 'graveyard', 'winter', 'desert'];
+const WORLD_THEMES = ['nature','graveyard','winter','desert'];
 const WORLD_TIMES  = [180, 210, 240, 270];
 
 const TILE_VARIANTS = {
@@ -10,6 +10,8 @@ const TILE_VARIANTS = {
   desert:    { gnd_top_left:2,gnd_top_mid:3,gnd_top_right:4,gnd_mid_left:5,gnd_mid_fill:6,gnd_mid_right:7,gnd_bot_left:8,gnd_bot_mid:9,gnd_bot_right:10,plat_left:15,plat_mid:14,plat_right:13,breakable:18 },
 };
 
+// الأعداء الـ 13 موزّعون على 4 عوالم
+// bat1-3: طائر 60x60 | snail1-3: أرضي 60x60 | spikebee1-4: طائر كبير | tuca1-3: أرضي كبير
 const WORLD_ENEMIES = {
   nature:    { walker:'snail1', flyer:'bat1',      boss:'tuca1'     },
   graveyard: { walker:'snail2', flyer:'bat2',      boss:'spikebee1' },
@@ -39,223 +41,222 @@ const WORLD_DECOS = {
 function rng(seed) {
   let s = seed >>> 0;
   const f = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-  for (let i = 0; i < 6; i++) f();
+  for (let i = 0; i < 6; i++) f(); // warm-up
   return f;
 }
 
-const G = 9; // صف سطح الأرض الأساسي في اللعبة (من أصل 14 صفاً)
+const G = 9; // GND_TOP: أول صف أرض
 const isFlyerType = t => t.startsWith('bat') || t.startsWith('spikebee');
+
+// قيم الخلايا (تطابق T في game.js)
 const CELL = { AIR:0, GND:1, PLT:2, SPIKE:8, SPRING:10, CRUMBLE:11 };
 
-// ══════════════════════════════════════════════════════════════════════════
-//  مخططات المراحل الـ 20 المستخلصة من TMX بعد إعادة الهندسة وتغيير التفاصيل
-//  تم تغيير: المواقع، أطوال الفجوات، ارتفاع المنصات، مواقع الأسرار، وأنواع الأعداء
-// ══════════════════════════════════════════════════════════════════════════
-const REMIXED_TMX_BLUEPRINTS = [
-  // المرحلة 1 (مستوحاة من Level1.tmx بتوزيع جديد ومنصات متدرجة)
-  {
-    cols: 165,
-    gaps: [{c:26,len:3},{c:58,len:4},{c:96,len:3},{c:128,len:4}],
-    hills: [{c:14,len:4,h:1},{c:42,len:5,h:2},{c:76,len:6,h:2},{c:112,len:4,h:1}],
-    plats: [{c:20,r:6,len:4},{c:34,r:5,len:5},{c:66,r:6,len:4},{c:86,r:4,len:5},{c:119,r:6,len:4}],
-    breaks: [{c:16,r:4,hasCoin:true},{c:36,r:1,hasHeart:true},{c:68,r:2,hasCoin:true},{c:88,r:0,hasItem:'shield'},{c:121,r:2,hasHeart:true}],
-    springs: [{c:32,r:8},{c:83,r:8}],
-    spikes: [{c:49,w:3,v:1},{c:104,w:4,v:2}],
-    movers: [{c:58,len:3,span:4,r:8,speed:0.8,phase:0}],
-    secrets: [{c:43,r:5,w:4,h:4,starC:45,starR:7},{c:77,r:5,w:4,h:4,starC:79,starR:7},{c:113,r:5,w:3,h:4,starC:114,starR:7}],
-    enemies: [{type:'snail1',c:22,r:8,fly:false,dir:-1},{type:'bat1',c:38,r:4,fly:true,dir:1},{type:'snail1',c:71,r:8,fly:false,dir:-1},{type:'tuca1',c:91,r:8,fly:false,dir:1},{type:'bat1',c:124,r:3,fly:true,dir:-1}]
-  },
-  // المرحلة 2 (مستوحاة من Level2.tmx مع إضافة جزر علوية وممرات بديلة)
-  {
-    cols: 175,
-    gaps: [{c:22,len:4},{c:48,len:5},{c:82,len:4},{c:115,len:5},{c:140,len:3}],
-    hills: [{c:12,len:3,h:1},{c:33,len:6,h:2},{c:65,len:5,h:3},{c:98,len:4,h:2},{c:126,len:5,h:1}],
-    plats: [{c:17,r:6,len:3},{c:28,r:5,len:4},{c:55,r:6,len:5},{c:74,r:4,len:4},{c:106,r:5,len:5},{c:134,r:6,len:4}],
-    breaks: [{c:18,r:2,hasHeart:true},{c:35,r:3,hasCoin:true},{c:57,r:2,hasItem:'magnet'},{c:76,r:0,hasHeart:true},{c:108,r:1,hasCoin:true}],
-    springs: [{c:46,r:8},{c:95,r:8}],
-    spikes: [{c:40,w:4,v:2},{c:89,w:3,v:1},{c:131,w:3,v:1}],
-    movers: [{c:48,len:3,span:5,r:8,speed:1.0,phase:1.2}],
-    secrets: [{c:34,r:5,w:4,h:4,starC:36,starR:7},{c:66,r:4,w:4,h:5,starC:68,starR:7},{c:127,r:5,w:4,h:4,starC:129,starR:7}],
-    enemies: [{type:'snail1',c:16,r:8,fly:false,dir:1},{type:'bat1',c:30,r:3,fly:true,dir:-1},{type:'tuca1',c:60,r:8,fly:false,dir:-1},{type:'spikebee4',c:84,r:4,fly:true,dir:1},{type:'snail1',c:110,r:8,fly:false,dir:-1},{type:'tuca1',c:136,r:8,fly:false,dir:1}]
-  },
-  // المرحلة 3 (مستوحاة من Level3.tmx بتكثيف القفزات المزدوجة)
-  {
-    cols: 180,
-    gaps: [{c:19,len:3},{c:39,len:4},{c:64,len:5},{c:92,len:4},{c:122,len:4},{c:146,len:3}],
-    hills: [{c:10,len:4,h:2},{c:27,len:4,h:1},{c:51,len:5,h:2},{c:78,len:6,h:3},{c:108,len:5,h:2}],
-    plats: [{c:15,r:5,len:3},{c:33,r:6,len:4},{c:45,r:5,len:4},{c:70,r:4,len:5},{c:99,r:6,len:4},{c:130,r:5,len:5}],
-    breaks: [{c:11,r:3,hasCoin:true},{c:34,r:2,hasHeart:true},{c:53,r:3,hasItem:'shield'},{c:80,r:1,hasHeart:true},{c:132,r:1,hasCoin:true}],
-    springs: [{c:62,r:8},{c:120,r:8}],
-    spikes: [{c:24,w:3,v:1},{c:58,w:3,v:2},{c:87,w:4,v:1},{c:138,w:3,v:2}],
-    movers: [{c:64,len:3,span:5,r:7,speed:1.1,phase:2.1}],
-    secrets: [{c:10,r:5,w:4,h:4,starC:12,starR:7},{c:79,r:4,w:4,h:5,starC:81,starR:7},{c:109,r:5,w:4,h:4,starC:111,starR:7}],
-    enemies: [{type:'bat1',c:21,r:4,fly:true,dir:1},{type:'snail1',c:36,r:8,fly:false,dir:-1},{type:'tuca1',c:55,r:8,fly:false,dir:1},{type:'spikebee4',c:73,r:3,fly:true,dir:-1},{type:'snail1',c:103,r:8,fly:false,dir:1},{type:'bat1',c:135,r:4,fly:true,dir:-1}]
-  },
-  // المرحلة 4 (مستوحاة من Level4.tmx — مسار التلال والأعمدة)
-  {
-    cols: 185,
-    gaps: [{c:28,len:4},{c:54,len:3},{c:84,len:5},{c:116,len:4},{c:148,len:4}],
-    hills: [{c:13,len:3,h:1},{c:18,len:3,h:2},{c:23,len:3,h:3},{c:41,len:5,h:2},{c:70,len:4,h:3},{c:98,len:6,h:2},{c:132,len:4,h:2}],
-    plats: [{c:34,r:5,len:4},{c:60,r:6,len:5},{c:90,r:4,len:4},{c:123,r:5,len:5}],
-    breaks: [{c:24,r:2,hasHeart:true},{c:43,r:3,hasCoin:true},{c:62,r:2,hasItem:'magnet'},{c:100,r:3,hasHeart:true},{c:125,r:1,hasCoin:true}],
-    springs: [{c:68,r:8},{c:114,r:8}],
-    spikes: [{c:39,w:3,v:2},{c:77,w:4,v:1},{c:109,w:3,v:2}],
-    movers: [{c:84,len:3,span:5,r:8,speed:1.2,phase:0.5}],
-    secrets: [{c:23,r:4,w:3,h:5,starC:24,starR:7},{c:70,r:4,w:4,h:5,starC:72,starR:7},{c:99,r:5,w:4,h:4,starC:101,starR:7}],
-    enemies: [{type:'snail1',c:16,r:8,fly:false,dir:1},{type:'tuca1',c:46,r:8,fly:false,dir:-1},{type:'bat1',c:64,r:3,fly:true,dir:1},{type:'spikebee4',c:92,r:3,fly:true,dir:-1},{type:'tuca1',c:128,r:8,fly:false,dir:1}]
-  },
-  // المرحلة 5 (مستوحاة من Level5.tmx — مواجهة زعيم مصغرة في النهاية)
-  {
-    cols: 190,
-    gaps: [{c:24,len:4},{c:50,len:4},{c:78,len:5},{c:110,len:4}],
-    hills: [{c:12,len:4,h:2},{c:36,len:5,h:2},{c:64,len:5,h:3},{c:94,len:5,h:2}],
-    plats: [{c:18,r:6,len:4},{c:43,r:5,len:4},{c:71,r:4,len:4},{c:102,r:6,len:4},{c:130,r:5,len:5},{c:142,r:4,len:6},{c:154,r:5,len:5}],
-    breaks: [{c:14,r:3,hasCoin:true},{c:45,r:1,hasHeart:true},{c:72,r:0,hasItem:'shield'},{c:132,r:1,hasHeart:true},{c:145,r:0,hasCoin:true}],
-    springs: [{c:48,r:8},{c:127,r:8}],
-    spikes: [{c:31,w:3,v:1},{c:58,w:4,v:2},{c:87,w:3,v:1}],
-    movers: [{c:78,len:3,span:5,r:7,speed:1.25,phase:1.8}],
-    secrets: [{c:12,r:5,w:4,h:4,starC:14,starR:7},{c:64,r:4,w:4,h:5,starC:66,starR:7},{c:94,r:5,w:4,h:4,starC:96,starR:7}],
-    enemies: [{type:'snail1',c:20,r:8,fly:false,dir:-1},{type:'bat1',c:46,r:3,fly:true,dir:1},{type:'tuca1',c:85,r:8,fly:false,dir:-1},{type:'tuca1',c:145,r:8,fly:false,dir:-1},{type:'spikebee4',c:150,r:3,fly:true,dir:1}]
-  },
-  // المرحلة 6 (مستوحاة من Level6.tmx — طابع المقبرة والأرض المتكسرة)
-  {
-    cols: 185,
-    gaps: [{c:21,len:4},{c:45,len:5},{c:75,len:4},{c:105,len:5},{c:138,len:4}],
-    hills: [{c:11,len:4,h:1},{c:32,len:5,h:2},{c:60,len:6,h:2},{c:90,len:5,h:3},{c:122,len:4,h:2}],
-    plats: [{c:16,r:6,len:3},{c:27,r:5,len:4},{c:52,r:6,len:4},{c:82,r:5,len:5},{c:114,r:6,len:4}],
-    breaks: [{c:17,r:2,hasHeart:true},{c:34,r:3,hasCoin:true},{c:62,r:3,hasItem:'magnet'},{c:92,r:1,hasHeart:true},{c:124,r:3,hasCoin:true}],
-    springs: [{c:43,r:8},{c:103,r:8}],
-    spikes: [{c:38,w:3,v:1},{c:69,w:4,v:2},{c:98,w:3,v:1},{c:130,w:4,v:2}],
-    movers: [{c:45,len:3,span:5,r:8,speed:1.1,phase:0.9}],
-    secrets: [{c:32,r:5,w:4,h:4,starC:34,starR:7},{c:61,r:5,w:4,h:4,starC:63,starR:7},{c:90,r:4,w:4,h:5,starC:92,starR:7}],
-    enemies: [{type:'snail2',c:15,r:8,fly:false,dir:1},{type:'bat2',c:29,r:4,fly:true,dir:-1},{type:'spikebee1',c:55,r:4,fly:true,dir:1},{type:'snail2',c:85,r:8,fly:false,dir:-1},{type:'tuca1',c:118,r:8,fly:false,dir:1}]
-  },
-  // المرحلة 7 (مستوحاة من Level7.tmx — قفزات سريعة ومنصات ضيقة)
-  {
-    cols: 190,
-    gaps: [{c:18,len:3},{c:34,len:4},{c:52,len:4},{c:74,len:5},{c:102,len:4},{c:132,len:5}],
-    hills: [{c:10,len:3,h:1},{c:25,len:4,h:2},{c:42,len:5,h:2},{c:63,len:5,h:3},{c:88,len:6,h:2},{c:118,len:5,h:2}],
-    plats: [{c:14,r:6,len:3},{c:30,r:5,len:3},{c:48,r:6,len:3},{c:69,r:4,len:4},{c:96,r:5,len:4},{c:125,r:6,len:4}],
-    breaks: [{c:11,r:4,hasCoin:true},{c:44,r:3,hasHeart:true},{c:70,r:0,hasItem:'shield'},{c:90,r:3,hasHeart:true},{c:127,r:2,hasCoin:true}],
-    springs: [{c:72,r:8},{c:130,r:8}],
-    spikes: [{c:21,w:3,v:2},{c:58,w:3,v:1},{c:82,w:4,v:2},{c:111,w:3,v:1}],
-    movers: [{c:74,len:3,span:5,r:7,speed:1.3,phase:2.5}],
-    secrets: [{c:25,r:5,w:4,h:4,starC:27,starR:7},{c:63,r:4,w:4,h:5,starC:65,starR:7},{c:89,r:5,w:4,h:4,starC:91,starR:7}],
-    enemies: [{type:'bat2',c:20,r:4,fly:true,dir:1},{type:'snail2',c:39,r:8,fly:false,dir:-1},{type:'spikebee1',c:66,r:3,fly:true,dir:1},{type:'tuca1',c:94,r:8,fly:false,dir:-1},{type:'bat2',c:122,r:4,fly:true,dir:1}]
-  },
-  // المرحلة 8 (مستوحاة من Level8.tmx — متاهة منصات وممرات سفلية)
-  {
-    cols: 195,
-    gaps: [{c:26,len:4},{c:56,len:5},{c:88,len:4},{c:120,len:5},{c:150,len:4}],
-    hills: [{c:14,len:5,h:2},{c:40,len:6,h:3},{c:72,len:5,h:2},{c:104,len:6,h:2},{c:136,len:5,h:3}],
-    plats: [{c:20,r:5,len:5},{c:33,r:6,len:4},{c:48,r:4,len:6},{c:64,r:5,len:5},{c:80,r:6,len:4},{c:96,r:4,len:5},{c:112,r:5,len:6}],
-    breaks: [{c:22,r:1,hasHeart:true},{c:50,r:0,hasCoin:true},{c:66,r:1,hasItem:'magnet'},{c:98,r:0,hasHeart:true},{c:115,r:1,hasCoin:true}],
-    springs: [{c:46,r:8},{c:94,r:8}],
-    spikes: [{c:32,w:4,v:1},{c:63,w:4,v:2},{c:95,w:3,v:1},{c:128,w:4,v:2}],
-    movers: [{c:56,len:3,span:5,r:8,speed:1.15,phase:0.3},{c:120,len:3,span:5,r:8,speed:1.2,phase:3.1}],
-    secrets: [{c:14,r:5,w:4,h:4,starC:16,starR:7},{c:41,r:4,w:4,h:5,starC:43,starR:7},{c:137,r:4,w:4,h:5,starC:139,starR:7}],
-    enemies: [{type:'snail2',c:24,r:8,fly:false,dir:-1},{type:'spikebee1',c:52,r:3,fly:true,dir:1},{type:'tuca1',c:78,r:8,fly:false,dir:-1},{type:'bat2',c:100,r:3,fly:true,dir:1},{type:'snail2',c:130,r:8,fly:false,dir:-1}]
-  },
-  // المرحلة 9 (مستوحاة من Level9.tmx — جزر السماء والنوابض المتتالية)
-  {
-    cols: 195,
-    gaps: [{c:20,len:5},{c:46,len:5},{c:76,len:5},{c:108,len:5},{c:140,len:4}],
-    hills: [{c:11,len:4,h:1},{c:34,len:5,h:2},{c:62,len:6,h:2},{c:92,len:5,h:3},{c:126,len:5,h:2}],
-    plats: [{c:16,r:6,len:3},{c:27,r:5,len:4},{c:40,r:6,len:4},{c:53,r:4,len:5},{c:69,r:6,len:4},{c:83,r:5,len:4},{c:100,r:6,len:5},{c:116,r:4,len:5}],
-    breaks: [{c:28,r:1,hasCoin:true},{c:55,r:0,hasHeart:true},{c:85,r:1,hasItem:'shield'},{c:118,r:0,hasHeart:true}],
-    springs: [{c:18,r:8},{c:44,r:8},{c:74,r:8},{c:106,r:8}],
-    spikes: [{c:33,w:3,v:2},{c:61,w:3,v:1},{c:99,w:4,v:2}],
-    movers: [{c:20,len:3,span:5,r:8,speed:1.1,phase:1.5},{c:76,len:3,span:5,r:8,speed:1.25,phase:2.8}],
-    secrets: [{c:34,r:5,w:4,h:4,starC:36,starR:7},{c:63,r:5,w:4,h:4,starC:65,starR:7},{c:92,r:4,w:4,h:5,starC:94,starR:7}],
-    enemies: [{type:'bat2',c:23,r:3,fly:true,dir:1},{type:'snail2',c:37,r:8,fly:false,dir:-1},{type:'spikebee1',c:57,r:2,fly:true,dir:-1},{type:'tuca1',c:88,r:8,fly:false,dir:1},{type:'spikebee1',c:112,r:3,fly:true,dir:-1}]
-  },
-  // المرحلة 10 (مستوحاة من Level10.tmx — معركة الزعيم الثاني)
-  {
-    cols: 205,
-    gaps: [{c:25,len:4},{c:55,len:5},{c:86,len:4},{c:118,len:5}],
-    hills: [{c:12,len:5,h:2},{c:38,len:6,h:3},{c:68,len:5,h:2},{c:100,len:6,h:3}],
-    plats: [{c:19,r:5,len:4},{c:47,r:4,len:5},{c:76,r:5,len:5},{c:109,r:4,len:5},{c:138,r:5,len:5},{c:150,r:3,len:7},{c:164,r:5,len:5}],
-    breaks: [{c:14,r:3,hasCoin:true},{c:49,r:0,hasHeart:true},{c:78,r:1,hasItem:'magnet'},{c:140,r:1,hasHeart:true},{c:153,r:-1,hasCoin:true}],
-    springs: [{c:53,r:8},{c:135,r:8}],
-    spikes: [{c:32,w:4,v:1},{c:62,w:4,v:2},{c:93,w:3,v:1}],
-    movers: [{c:55,len:3,span:5,r:7,speed:1.3,phase:0.7},{c:118,len:3,span:5,r:8,speed:1.35,phase:2.0}],
-    secrets: [{c:12,r:5,w:4,h:4,starC:14,starR:7},{c:39,r:4,w:4,h:5,starC:41,starR:7},{c:101,r:4,w:4,h:5,starC:103,starR:7}],
-    enemies: [{type:'snail2',c:21,r:8,fly:false,dir:1},{type:'spikebee1',c:50,r:3,fly:true,dir:-1},{type:'tuca1',c:82,r:8,fly:false,dir:1},{type:'spikebee1',c:153,r:2,fly:true,dir:-1},{type:'tuca1',c:158,r:8,fly:false,dir:1}]
-  },
-  // المرحلة 11 (مستوحاة من Level11.tmx — طابع الشتاء والمنحدرات الجليدية)
-  {
-    cols: 195,
-    gaps: [{c:22,len:4},{c:48,len:4},{c:76,len:5},{c:106,len:4},{c:136,len:4}],
-    hills: [{c:11,len:4,h:2},{c:32,len:5,h:2},{c:58,len:6,h:3},{c:88,len:5,h:2},{c:118,len:6,h:2}],
-    plats: [{c:17,r:6,len:4},{c:28,r:5,len:3},{c:40,r:6,len:4},{c:67,r:4,len:5},{c:96,r:5,len:4},{c:127,r:6,len:4}],
-    breaks: [{c:13,r:3,hasHeart:true},{c:42,r:2,hasCoin:true},{c:69,r:0,hasItem:'shield'},{c:98,r:1,hasHeart:true},{c:129,r:2,hasCoin:true}],
-    springs: [{c:74,r:8},{c:134,r:8}],
-    spikes: [{c:37,w:3,v:2},{c:64,w:4,v:1},{c:93,w:3,v:2},{c:124,w:4,v:1}],
-    movers: [{c:76,len:3,span:5,r:8,speed:1.25,phase:1.1}],
-    secrets: [{c:11,r:5,w:4,h:4,starC:13,starR:7},{c:59,r:4,w:4,h:5,starC:61,starR:7},{c:119,r:5,w:4,h:4,starC:121,starR:7}],
-    enemies: [{type:'tuca2',c:16,r:8,fly:false,dir:-1},{type:'spikebee2',c:30,r:4,fly:true,dir:1},{type:'bat3',c:62,r:3,fly:true,dir:-1},{type:'tuca2',c:91,r:8,fly:false,dir:1},{type:'snail3',c:122,r:8,fly:false,dir:-1}]
-  },
-  // المرحلة 12 (مستوحاة من Level12.tmx — ممرات الأشواك العلوية)
-  {
-    cols: 200,
-    gaps: [{c:24,len:4},{c:52,len:5},{c:84,len:4},{c:116,len:5},{c:146,len:4}],
-    hills: [{c:12,len:5,h:2},{c:38,len:5,h:3},{c:68,len:6,h:2},{c:98,len:5,h:3},{c:130,len:5,h:2}],
-    plats: [{c:18,r:5,len:5},{c:31,r:6,len:4},{c:45,r:4,len:5},{c:60,r:5,len:6},{c:76,r:6,len:4},{c:91,r:4,len:5},{c:107,r:5,len:6}],
-    breaks: [{c:20,r:1,hasCoin:true},{c:47,r:0,hasHeart:true},{c:63,r:1,hasItem:'magnet'},{c:93,r:0,hasHeart:true},{c:110,r:1,hasCoin:true}],
-    springs: [{c:50,r:8},{c:114,r:8}],
-    spikes: [{c:29,w:4,v:1},{c:58,w:4,v:2},{c:89,w:4,v:1},{c:122,w:4,v:2}],
-    movers: [{c:52,len:3,span:5,r:8,speed:1.3,phase:0.4},{c:116,len:3,span:5,r:8,speed:1.3,phase:2.7}],
-    secrets: [{c:12,r:5,w:4,h:4,starC:14,starR:7},{c:38,r:4,w:4,h:5,starC:40,starR:7},{c:98,r:4,w:4,h:5,starC:100,starR:7}],
-    enemies: [{type:'spikebee2',c:22,r:3,fly:true,dir:1},{type:'tuca2',c:42,r:8,fly:false,dir:-1},{type:'bat3',c:66,r:3,fly:true,dir:1},{type:'snail3',c:95,r:8,fly:false,dir:-1},{type:'spikebee2',c:125,r:4,fly:true,dir:1}]
-  },
-  // المرحلة 13 (مستوحاة من Level13.tmx — القفز المتدرج بين المنصات)
-  {
-    cols: 200,
-    gaps: [{c:19,len:4},{c:42,len:5},{c:70,len:5},{c:98,len:4},{c:128,len:5},{c:154,len:3}],
-    hills: [{c:10,len:4,h:1},{c:28,len:5,h:2},{c:54,len:6,h:3},{c:82,len:5,h:2},{c:112,len:6,h:2}],
-    plats: [{c:15,r:6,len:3},{c:24,r:5,len:3},{c:35,r:6,len:4},{c:48,r:4,len:4},{c:62,r:5,len:5},{c:76,r:6,len:4},{c:89,r:4,len:4},{c:104,r:5,len:5},{c:120,r:6,len:4}],
-    breaks: [{c:11,r:4,hasHeart:true},{c:37,r:2,hasCoin:true},{c:64,r:1,hasItem:'shield'},{c:91,r:0,hasHeart:true},{c:122,r:2,hasCoin:true}],
-    springs: [{c:40,r:8},{c:68,r:8},{c:126,r:8}],
-    spikes: [{c:33,w:3,v:2},{c:60,w:3,v:1},{c:87,w:3,v:2},{c:118,w:4,v:1}],
-    movers: [{c:42,len:3,span:5,r:7,speed:1.35,phase:1.6}],
-    secrets: [{c:28,r:5,w:4,h:4,starC:30,starR:7},{c:55,r:4,w:4,h:5,starC:57,starR:7},{c:113,r:5,w:4,h:4,starC:115,starR:7}],
-    enemies: [{type:'tuca2',c:14,r:8,fly:false,dir:1},{type:'bat3',c:26,r:3,fly:true,dir:-1},{type:'spikebee2',c:51,r:2,fly:true,dir:1},{type:'tuca2',c:85,r:8,fly:false,dir:-1},{type:'bat3',c:116,r:3,fly:true,dir:1}]
-  },
-  // المرحلة 14 (مستوحاة من Level14.tmx — تحدي السرعة والأعداء الطائرين)
-  {
-    cols: 205,
-    gaps: [{c:23,len:4},{c:50,len:5},{c:80,len:5},{c:112,len:5},{c:144,len:4}],
-    hills: [{c:12,len:4,h:2},{c:34,len:6,h:2},{c:62,len:5,h:3},{c:92,len:6,h:3},{c:126,len:5,h:2}],
-    plats: [{c:18,r:5,len:4},{c:29,r:6,len:4},{c:42,r:4,len:5},{c:56,r:5,len:5},{c:71,r:6,len:4},{c:86,r:4,len:5},{c:102,r:5,len:5},{c:119,r:6,len:4}],
-    breaks: [{c:20,r:1,hasCoin:true},{c:44,r:0,hasHeart:true},{c:73,r:2,hasItem:'magnet'},{c:104,r:1,hasHeart:true},{c:121,r:2,hasCoin:true}],
-    springs: [{c:48,r:8},{c:110,r:8}],
-    spikes: [{c:31,w:4,v:1},{c:60,w:3,v:2},{c:90,w:4,v:1},{c:124,w:3,v:2}],
-    movers: [{c:50,len:3,span:5,r:8,speed:1.4,phase:0.8},{c:80,len:3,span:5,r:8,speed:1.35,phase:2.4}],
-    secrets: [{c:12,r:5,w:4,h:4,starC:14,starR:7},{c:62,r:4,w:4,h:5,starC:64,starR:7},{c:93,r:4,w:4,h:5,starC:95,starR:7}],
-    enemies: [{type:'spikebee2',c:25,r:3,fly:true,dir:-1},{type:'tuca2',c:37,r:8,fly:false,dir:1},{type:'bat3',c:58,r:2,fly:true,dir:-1},{type:'snail3',c:88,r:8,fly:false,dir:1},{type:'spikebee2',c:115,r:3,fly:true,dir:-1},{type:'tuca2',c:132,r:8,fly:false,dir:1}]
-  },
-  // المرحلة 15 (مستوحاة من Level15.tmx — الزعيم الثالث)
-  {
-    cols: 210,
-    gaps: [{c:24,len:4},{c:54,len:5},{c:86,len:5},{c:120,len:5}],
-    hills: [{c:12,len:5,h:2},{c:38,len:6,h:3},{c:68,len:6,h:2},{c:100,len:6,h:3}],
-    plats: [{c:19,r:5,len:4},{c:46,r:4,len:5},{c:76,r:5,len:5},{c:110,r:4,len:5},{c:140,r:5,len:5},{c:152,r:3,len:7},{c:166,r:5,len:5}],
-    breaks: [{c:14,r:3,hasCoin:true},{c:48,r:0,hasHeart:true},{c:78,r:1,hasItem:'shield'},{c:142,r:1,hasHeart:true},{c:155,r:-1,hasCoin:true}],
-    springs: [{c:52,r:8},{c:137,r:8}],
-    spikes: [{c:31,w:4,v:2},{c:62,w:4,v:1},{c:94,w:4,v:2}],
-    movers: [{c:54,len:3,span:5,r:7,speed:1.4,phase:1.2},{c:120,len:3,span:5,r:8,speed:1.4,phase:3.0}],
-    secrets: [{c:12,r:5,w:4,h:4,starC:14,starR:7},{c:39,r:4,w:4,h:5,starC:41,starR:7},{c:101,r:4,w:4,h:5,starC:103,starR:7}],
-    enemies: [{type:'tuca2',c:21,r:8,fly:false,dir:1},{type:'spikebee2',c:49,r:3,fly:true,dir:-1},{type:'bat3',c:82,r:2,fly:true,dir:1},{type:'bat3',c:155,r:2,fly:true,dir:-1},{type:'tuca2',c:160,r:8,fly:false,dir:1}]
-  },
-  // المرحلة 16 (مستوحاة من Level16.tmx — طابع الصحراء والكثبان)
-  {
-    cols: 205,
-    gaps: [{c:22,len:4},{c:48,len:5},{c:78,len:4},{c:108,len:5},{c:140,len:4}],
-    hills: [{c:11,len:4,h:2},{c:32,len:6,h:3},{c:60,len:5,h:2},{c:90,len:6,h:3},{c:122,len:5,h:2}],
-    plats: [{c:17,r:5,len:4},{c:28,r:6,len:3},{c:41,r:4,len:5},{c:55,r:5,len:4},{c:69,r:6,len:4},{c:84,r:4,len:5},{c:99,r:5,len:5},{c:115,r:6,len:4}],
-    breaks: [{c:13,r:3,hasHeart:true},{c:43,r:0,hasCoin:true},{c:71,r:2,hasItem:'magnet'},{c:101,r:1,hasHeart:true},{c:117,r:2,hasCoin:true}],
-    springs: [{c:46,r:8},{c:106,r:8}],
-    spikes: [{c:30,w:3,v:1},{c:58,w:4, W_(x,k,w1+5);
+// ══════════════════════════════════════════════════════════════
+//  قواعد الفيزياء المستخدمة في التصميم (اللاعب 76×100، TS=32)
+//  • أقصى ارتفاع قفز ≈ 4.1 بلاطة → درجات التسلق ≤ 3
+//  • أقصى مسافة قفز ≈ 5 بلاطات → الفجوات البسيطة ≤ 5
+//  • النابض يرفع ≈ 8 بلاطات
+//  • كتلة الكسر فوق سطح بالصف S تُوضع في الصف S-5 (لا تعيق المشي)
+// ══════════════════════════════════════════════════════════════
+
+// ───────── أدوات مساعدة ─────────
+const mk = () => ({ p:[], en:[], co:[], ga:[], br:[], sp:[], spr:[], cr:[], hl:[], am:[], w:30 });
+const W_ = (x,k,c,d) => k.en.push({ type:x.W(), c, r:G-1, fly:false, dir:d||(x.rand()<.5?1:-1) });
+const F_ = (x,k,c,r,d) => k.en.push({ type:x.F(), c, r, fly:true, dir:d||(x.rand()<.5?1:-1) });
+const coinsH = (k,c0,n,r,step) => { for (let i=0;i<n;i++) k.co.push({c:c0+i*(step||1), r}); };
+const arc = (k,c0,len,r,h) => { for (let i=0;i<len;i++) k.co.push({c:c0+i, r:r-Math.round(Math.sin(Math.PI*(i+.5)/len)*h)}); };
+const plat = (k,c,r,len,coins) => { k.p.push({c,r,len}); if (coins!==false) coinsH(k,c,len,r-1); };
+const brk = (k,c,r,heart) => k.br.push({c,r,hasHeart:!!heart});
+// مجموعة أشواك: صورة واحدة، تتناوب بين النوع 1 (عرض 3) والنوع 2 (عرض 4)
+const spk = (x,k,c) => { const v=(x.spk++%2)+1, w=v===1?3:4; k.sp.push({c,w,v}); return w; };
+
+// ═════════ القطع (chunks) — عرض كل قطعة 30 عموداً ═════════
+
+// أرض مفتوحة + منصة عائمة
+function ch_open(x) { const k=mk();
+  coinsH(k,2,13,G-1,2);
+  const pc=x.ri(6,16), L=x.ri(4,6);
+  plat(k,pc,G-3,L); brk(k,pc+1,G-8,x.rand()<.3);
+  if (x.diff>=2) W_(x,k,x.ri(10,14));
+  if (x.diff>=4) W_(x,k,x.ri(20,26));
+  if (x.diff>=6) F_(x,k,x.ri(8,20),G-6);
+  return k; }
+
+// فجوة بسيطة بحجم متغير
+function ch_gap(x) { const k=mk();
+  const sz=x.ri(3,Math.min(5,3+(x.diff>>3))), gc=x.ri(6,12);
+  k.ga.push({c:gc,len:sz});
+  coinsH(k,2,Math.max(1,(gc-3)>>1),G-1,2);
+  arc(k,gc-1,sz+2,G-2,3);
+  if (sz>=5) plat(k,gc+(sz>>1)-1,G-3,2,false);
+  brk(k,gc+sz+2,G-5,false);
+  W_(x,k,gc+sz+x.ri(4,6));
+  if (x.diff>=3) F_(x,k,gc+(sz>>1),G-6);
+  return k; }
+
+// سلسلة هوات صغيرة متتالية (مثل ماريو)
+function ch_gap_series(x) { const k=mk();
+  const maxSz=Math.min(4,2+(x.diff>>3)+(x.diff>=3?1:0));
+  let c=x.ri(5,6), n=0;
+  while (n<3){
+    const sz=x.ri(2,maxSz);
+    if (c+sz>26) break;
+    k.ga.push({c,len:sz}); arc(k,c-1,sz+2,G-2,3);
+    c+=sz+x.ri(4,5); n++;
+  }
+  if (x.diff>=2) W_(x,k,x.ri(3,5)+ (k.ga[0]?k.ga[0].c+k.ga[0].len+1:8));
+  if (x.diff>=5) F_(x,k,x.ri(10,22),G-6);
+  brk(k,x.ri(8,22),G-5,x.rand()<.3);
+  return k; }
+
+// جبل: درج صاعد ثم هضبة ثم درج نازل
+function ch_mountain(x) { const k=mk();
+  const hmax=x.diff<4?2:3; let c=x.ri(3,5);
+  for (let h=1;h<=hmax;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  const pl=x.ri(4,6); k.hl.push({c,len:pl,h:hmax}); coinsH(k,c,pl,G-hmax-1);
+  brk(k,c+(pl>>1),G-hmax-5,x.rand()<.4);
+  if (x.diff>=3) W_(x,k,c+1);
+  c+=pl;
+  for (let h=hmax-1;h>=1;h--){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  if (x.diff>=5) F_(x,k,c-pl,G-8);
+  if (x.diff>=2) W_(x,k,Math.min(c+3,26));
+  return k; }
+
+// أعمدة (مثل الأنابيب) بارتفاعات مختلفة
+function ch_pillars(x) { const k=mk();
+  let c=x.ri(4,5); const n=x.diff>=8?4:3;
+  for (let i=0;i<n&&c<=24;i++){
+    const h=x.ri(2,3); k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1);
+    if (i>0 && x.diff>=2) W_(x,k,c-3);
+    c+=2+x.ri(4,5);
+  }
+  if (x.diff>=5) F_(x,k,x.ri(10,18),G-6);
+  brk(k,x.ri(8,20),G-5,x.rand()<.3);
+  return k; }
+
+// حفرة عريضة بجزر عائمة متدرجة
+function ch_pit(x) { const k=mk();
+  const gc=x.ri(4,5), len=x.ri(9,12); k.ga.push({c:gc,len});
+  let cur=gc, r=G-2;
+  for (;;) {
+    const L=x.ri(2,3); plat(k,cur,r,L);
+    if (cur+L>=gc+len-2) break;
+    cur+=L+x.ri(2,3);
+    r=Math.max(G-4,Math.min(G-2,r+x.ri(-1,1)));
+  }
+  if (x.diff>=3) F_(x,k,gc+(len>>1),G-6);
+  W_(x,k,gc+len+x.ri(3,5));
+  return k; }
+
+// جسر ينهار عند الوقوف عليه
+function ch_crumble(x) { const k=mk();
+  const gc=x.ri(4,5), len=x.ri(8,11); k.ga.push({c:gc,len});
+  const alt=x.diff>=9 && x.rand()<.6;
+  for (let i=0;i<len;i++){ if (alt && i%3===2) continue; k.cr.push({c:gc+i,r:G}); }
+  coinsH(k,gc,len,G-2);
+  if (x.diff>=4) F_(x,k,gc+(len>>1),G-5);
+  W_(x,k,gc+len+x.ri(3,5));
+  return k; }
+
+// جزر تنهار فوق حفرة (صعب)
+function ch_crumble_islands(x) { const k=mk();
+  const gc=4, len=20; k.ga.push({c:gc,len});
+  const rows=[G-1,G-2,G-1,G-2];
+  for (let i=0;i<4;i++){ const c=gc+1+i*5;
+    for (let j=0;j<3;j++) k.cr.push({c:c+j,r:rows[i]});
+    coinsH(k,c,3,rows[i]-1);
+  }
+  F_(x,k,gc+9,G-6);
+  W_(x,k,gc+len+3);
+  return k; }
+
+// نابض يقذفك إلى منصة عالية
+function ch_spring_tower(x) { const k=mk();
+  k.spr.push({c:5,r:G-1});
+  brk(k,2,G-5,true);
+  plat(k,8,G-5,7); plat(k,17,G-4,5);
+  coinsH(k,9,5,G-8);
+  if (x.diff>=7) spk(x,k,10);
+  W_(x,k,x.ri(20,24));
+  if (x.diff>=4) F_(x,k,14,G-7);
+  return k; }
+
+// جزر في السماء — نابض إجباري للصعود
+function ch_sky_islands(x) { const k=mk();
+  const gc=5, len=18; k.ga.push({c:gc,len});
+  k.spr.push({c:3,r:G-1});
+  plat(k,7,G-5,5); plat(k,14,G-4,3); plat(k,19,G-3,3);
+  arc(k,12,4,G-8,1);
+  if (x.diff>=4) F_(x,k,16,G-7);
+  W_(x,k,gc+len+3);
+  return k; }
+
+// جنة العملات
+function ch_coin_heaven(x) { const k=mk();
+  k.spr.push({c:4,r:G-1});
+  plat(k,8,G-5,10);
+  coinsH(k,9,8,G-7); coinsH(k,10,6,G-8);
+  coinsH(k,2,12,G-1,2);
+  coinsH(k,20,5,G-1,2);
+  if (x.diff>=3) W_(x,k,x.ri(21,25));
+  return k; }
+
+// أشواك على الأرض (مجموعة = صورة واحدة) مع أقواس عملات للقفز
+function ch_spikes(x) { const k=mk();
+  let c=x.ri(6,8);
+  for (let i=0;i<3;i++){
+    const v=(x.spk%2)+1, w=v===1?3:4;
+    if (c+w>24) break;
+    spk(x,k,c);
+    arc(k,c-1,w+2,G-2,3);
+    c+=w+x.ri(6,7);
+    if (i===0 && x.diff>=3 && x.rand()<.5) W_(x,k,c-3);
+    if (x.diff<8 && i>=1) break;
+  }
+  brk(k,x.ri(8,20),G-5,false);
+  if (x.diff>=5) F_(x,k,x.ri(10,20),G-6);
+  return k; }
+
+// منصة عليا آمنة فوق أرض مليئة بالأشواك
+function ch_spike_tunnel(x) { const k=mk();
+  plat(k,3,G-3,25);
+  let c=7;
+  while (c+4<=24){ const w=spk(x,k,c); c+=w+x.ri(3,4); }
+  W_(x,k,9); W_(x,k,20);
+  if (x.diff>=6) F_(x,k,12,G-6);
+  brk(k,14,G-8,true);
+  return k; }
+
+// حشد من الأعداء مع منصات للتهرب
+function ch_horde(x) { const k=mk();
+  [3,13,23].forEach(c=>plat(k,c,G-3,4));
+  const cnt=Math.min(3+(x.diff>>2),6);
+  for (let i=0;i<cnt;i++) W_(x,k,5+Math.floor(i*22/cnt),i%2?1:-1);
+  if (x.diff>=5) F_(x,k,10,G-5);
+  if (x.diff>=9) F_(x,k,22,G-5);
+  brk(k,14,G-8,x.rand()<.4);
+  return k; }
+
+// كمين طيور على ارتفاعات مختلفة
+function ch_flyers(x) { const k=mk();
+  const n=Math.min(2+(x.diff>>3),4);
+  for (let i=0;i<n;i++) F_(x,k,6+i*6,G-4-(i%3)*1.5|0,i%2?1:-1);
+  plat(k,x.ri(8,12),G-3,5);
+  arc(k,3,8,G-2,2);
+  W_(x,k,x.ri(18,24));
+  brk(k,x.ri(14,22),G-5,false);
+  return k; }
+
+// جدار كتل قابل للكسر أو القفز
+function ch_block_wall(x) { const k=mk();
+  k.am.push({c:4,r:G-1});
+  const w1=x.ri(10,13);
+  for (let r=G-3;r<=G-1;r++) brk(k,w1,r,r===G-3);
+  coinsH(k,w1+2,4,G-1);
+  const w2=x.ri(20,24);
+  for (let r=G-3;r<=G-1;r++) brk(k,w2,r,false);
+  arc(k,w2-3,7,G-5,2);
+  W_(x,k,w1-4); if (x.diff>=4) W_(x,k,w1+5);
   return k; }
 
 // قبو كتل معلّقة فوق منصة
