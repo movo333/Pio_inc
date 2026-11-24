@@ -617,7 +617,7 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
-const BUILD_ID = 'login-v8';
+const BUILD_ID = 'secrets-v9';
 
 // ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
 function _ensureLoginUI() {
@@ -1113,10 +1113,8 @@ function buildWorld(ld) {
   castle = ld.castle ? { c: ld.castle.c } : null;
 
   // Enemies - تقليل 25% + إصلاح الطيران
-  const filteredEnemies = enDefs.filter((e, i) => {
-    if (i === 0) return true;
-    return Math.random() > 0.25;
-  });
+  // حذف ثابت (كل رابع عدو) بدل العشوائي: نفس الأعداء في كل مرة تُعاد فيها المرحلة
+  const filteredEnemies = enDefs.filter((e, i) => i === 0 || i % 4 !== 3);
   for (const e of filteredEnemies) {
     const sprData = getSpriteData(e.type);
     const canFly = sprData.fly;
