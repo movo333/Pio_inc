@@ -1,5 +1,11 @@
 'use strict';
 
+// ═══════════════════════════════════════════════════════════════════
+//  SUPER COWBOY — js/levels.js
+//  A+B: المراحل 1–50 (Nature + Graveyard) — قابلة للتشغيل الآن
+//  C (سيأتي لاحقاً): يستبدل خطط 51–100 بالخطط اليدوية + قطع Winter/Desert
+// ═══════════════════════════════════════════════════════════════════
+
 const WORLD_THEMES = ['nature','graveyard','winter','desert'];
 const WORLD_TIMES  = [180, 210, 240, 270];
 
@@ -10,8 +16,6 @@ const TILE_VARIANTS = {
   desert:    { gnd_top_left:2,gnd_top_mid:3,gnd_top_right:4,gnd_mid_left:5,gnd_mid_fill:6,gnd_mid_right:7,gnd_bot_left:8,gnd_bot_mid:9,gnd_bot_right:10,plat_left:15,plat_mid:14,plat_right:13,breakable:18 },
 };
 
-// الأعداء الـ 13 موزّعون على 4 عوالم
-// bat1-3: طائر 60x60 | snail1-3: أرضي 60x60 | spikebee1-4: طائر كبير | tuca1-3: أرضي كبير
 const WORLD_ENEMIES = {
   nature:    { walker:'snail1', flyer:'bat1',      boss:'tuca1'     },
   graveyard: { walker:'snail2', flyer:'bat2',      boss:'spikebee1' },
@@ -26,40 +30,23 @@ const WORLD_ENEMIES = {
 };
 
 const WORLD_DECOS = {
-  nature:    ['Tree_1.png','Tree_2.png','Tree_3.png','Bush__1_.png','Bush__2_.png','Bush__3_.png',
-              'Mushroom_1.png','Mushroom_2.png','Mushroom_3.png','Flower_1.png','Flower_2.png','Flower_3.png',
-              'Stone.png','Stone_2.png','Crate.png','Grass_1.png'],
-  graveyard: ['Tree.png','Dead_Tree.png','TombStone__1_.png','TombStone__2_.png','TombStone__3_.png',
-              'DeadBush.png','Bush__1_.png','Bush__2_.png','Crate.png','Bone.png','Skull.png','Candle.png'],
-  winter:    ['Tree_1.png','Tree_2.png','Tree_3.png','SnowMan.png','Stone.png','IceBox.png',
-              'Crystal.png','Crystal_2.png','Crate.png','IcePillar.png','Snowflake.png','Bush__1_.png'],
-  desert:    ['Cactus__1_.png','Cactus__2_.png','Cactus__3_.png','Tree.png','Dead_Tree.png',
-              'Bush__1_.png','Bush__2_.png','Stone.png','Stone_2.png','Crate.png',
-              'Skull.png','Barrel.png','Bone.png'],
+  nature:    ['Tree_1.png','Tree_2.png','Tree_3.png','Bush__1_.png','Bush__2_.png','Bush__3_.png','Mushroom_1.png','Mushroom_2.png','Mushroom_3.png','Flower_1.png','Flower_2.png','Flower_3.png','Stone.png','Stone_2.png','Crate.png','Grass_1.png'],
+  graveyard: ['Tree.png','Dead_Tree.png','TombStone__1_.png','TombStone__2_.png','TombStone__3_.png','DeadBush.png','Bush__1_.png','Bush__2_.png','Crate.png','Bone.png','Skull.png','Candle.png'],
+  winter:    ['Tree_1.png','Tree_2.png','Tree_3.png','SnowMan.png','Stone.png','IceBox.png','Crystal.png','Crystal_2.png','Crate.png','IcePillar.png','Snowflake.png','Bush__1_.png'],
+  desert:    ['Cactus__1_.png','Cactus__2_.png','Cactus__3_.png','Tree.png','Dead_Tree.png','Bush__1_.png','Bush__2_.png','Stone.png','Stone_2.png','Crate.png','Skull.png','Barrel.png','Bone.png'],
 };
 
 function rng(seed) {
   let s = seed >>> 0;
   const f = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-  for (let i = 0; i < 6; i++) f(); // warm-up
+  for (let i = 0; i < 6; i++) f();
   return f;
 }
 
-const G = 9; // GND_TOP: أول صف أرض
+const G = 9;
 const isFlyerType = t => t.startsWith('bat') || t.startsWith('spikebee');
-
-// قيم الخلايا (تطابق T في game.js)
 const CELL = { AIR:0, GND:1, PLT:2, SPIKE:8, SPRING:10, CRUMBLE:11 };
 
-// ══════════════════════════════════════════════════════════════
-//  قواعد الفيزياء المستخدمة في التصميم (اللاعب 76×100، TS=32)
-//  • أقصى ارتفاع قفز ≈ 4.1 بلاطة → درجات التسلق ≤ 3
-//  • أقصى مسافة قفز ≈ 5 بلاطات → الفجوات البسيطة ≤ 5
-//  • النابض يرفع ≈ 8 بلاطات
-//  • كتلة الكسر فوق سطح بالصف S تُوضع في الصف S-5 (لا تعيق المشي)
-// ══════════════════════════════════════════════════════════════
-
-// ───────── أدوات مساعدة ─────────
 const mk = () => ({ p:[], en:[], co:[], ga:[], br:[], sp:[], spr:[], cr:[], hl:[], am:[], w:30 });
 const W_ = (x,k,c,d) => k.en.push({ type:x.W(), c, r:G-1, fly:false, dir:d||(x.rand()<.5?1:-1) });
 const F_ = (x,k,c,r,d) => k.en.push({ type:x.F(), c, r, fly:true, dir:d||(x.rand()<.5?1:-1) });
@@ -67,763 +54,73 @@ const coinsH = (k,c0,n,r,step) => { for (let i=0;i<n;i++) k.co.push({c:c0+i*(ste
 const arc = (k,c0,len,r,h) => { for (let i=0;i<len;i++) k.co.push({c:c0+i, r:r-Math.round(Math.sin(Math.PI*(i+.5)/len)*h)}); };
 const plat = (k,c,r,len,coins) => { k.p.push({c,r,len}); if (coins!==false) coinsH(k,c,len,r-1); };
 const brk = (k,c,r,heart) => k.br.push({c,r,hasHeart:!!heart});
-// مجموعة أشواك: صورة واحدة، تتناوب بين النوع 1 (عرض 3) والنوع 2 (عرض 4)
 const spk = (x,k,c) => { const v=(x.spk++%2)+1, w=v===1?3:4; k.sp.push({c,w,v}); return w; };
 
-// ═════════ القطع (chunks) — عرض كل قطعة 30 عموداً ═════════
-
-// أرض مفتوحة + منصة عائمة
-function ch_open(x) { const k=mk();
-  coinsH(k,2,13,G-1,2);
-  const pc=x.ri(6,16), L=x.ri(4,6);
-  plat(k,pc,G-3,L); brk(k,pc+1,G-8,x.rand()<.3);
-  if (x.diff>=2) W_(x,k,x.ri(10,14));
-  if (x.diff>=4) W_(x,k,x.ri(20,26));
-  if (x.diff>=6) F_(x,k,x.ri(8,20),G-6);
-  return k; }
-
-// فجوة بسيطة بحجم متغير
-function ch_gap(x) { const k=mk();
-  const sz=x.ri(3,Math.min(5,3+(x.diff>>3))), gc=x.ri(6,12);
-  k.ga.push({c:gc,len:sz});
-  coinsH(k,2,Math.max(1,(gc-3)>>1),G-1,2);
-  arc(k,gc-1,sz+2,G-2,3);
-  if (sz>=5) plat(k,gc+(sz>>1)-1,G-3,2,false);
-  brk(k,gc+sz+2,G-5,false);
-  W_(x,k,gc+sz+x.ri(4,6));
-  if (x.diff>=3) F_(x,k,gc+(sz>>1),G-6);
-  return k; }
-
-// سلسلة هوات صغيرة متتالية (مثل ماريو)
-function ch_gap_series(x) { const k=mk();
-  const maxSz=Math.min(4,2+(x.diff>>3)+(x.diff>=3?1:0));
-  let c=x.ri(5,6), n=0;
-  while (n<3){
-    const sz=x.ri(2,maxSz);
-    if (c+sz>26) break;
-    k.ga.push({c,len:sz}); arc(k,c-1,sz+2,G-2,3);
-    c+=sz+x.ri(4,5); n++;
-  }
-  if (x.diff>=2) W_(x,k,x.ri(3,5)+ (k.ga[0]?k.ga[0].c+k.ga[0].len+1:8));
-  if (x.diff>=5) F_(x,k,x.ri(10,22),G-6);
-  brk(k,x.ri(8,22),G-5,x.rand()<.3);
-  return k; }
-
-// جبل: درج صاعد ثم هضبة ثم درج نازل
-function ch_mountain(x) { const k=mk();
-  const hmax=x.diff<4?2:3; let c=x.ri(3,5);
-  for (let h=1;h<=hmax;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
-  const pl=x.ri(4,6); k.hl.push({c,len:pl,h:hmax}); coinsH(k,c,pl,G-hmax-1);
-  brk(k,c+(pl>>1),G-hmax-5,x.rand()<.4);
-  if (x.diff>=3) W_(x,k,c+1);
-  c+=pl;
-  for (let h=hmax-1;h>=1;h--){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
-  if (x.diff>=5) F_(x,k,c-pl,G-8);
-  if (x.diff>=2) W_(x,k,Math.min(c+3,26));
-  return k; }
-
-// أعمدة (مثل الأنابيب) بارتفاعات مختلفة
-function ch_pillars(x) { const k=mk();
-  let c=x.ri(4,5); const n=x.diff>=8?4:3;
-  for (let i=0;i<n&&c<=24;i++){
-    const h=x.ri(2,3); k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1);
-    if (i>0 && x.diff>=2) W_(x,k,c-3);
-    c+=2+x.ri(4,5);
-  }
-  if (x.diff>=5) F_(x,k,x.ri(10,18),G-6);
-  brk(k,x.ri(8,20),G-5,x.rand()<.3);
-  return k; }
-
-// حفرة عريضة بجزر عائمة متدرجة
-function ch_pit(x) { const k=mk();
-  const gc=x.ri(4,5), len=x.ri(9,12); k.ga.push({c:gc,len});
-  let cur=gc, r=G-2;
-  for (;;) {
-    const L=x.ri(2,3); plat(k,cur,r,L);
-    if (cur+L>=gc+len-2) break;
-    cur+=L+x.ri(2,3);
-    r=Math.max(G-4,Math.min(G-2,r+x.ri(-1,1)));
-  }
-  if (x.diff>=3) F_(x,k,gc+(len>>1),G-6);
-  W_(x,k,gc+len+x.ri(3,5));
-  return k; }
-
-// جسر ينهار عند الوقوف عليه
-function ch_crumble(x) { const k=mk();
-  const gc=x.ri(4,5), len=x.ri(8,11); k.ga.push({c:gc,len});
-  const alt=x.diff>=9 && x.rand()<.6;
-  for (let i=0;i<len;i++){ if (alt && i%3===2) continue; k.cr.push({c:gc+i,r:G}); }
-  coinsH(k,gc,len,G-2);
-  if (x.diff>=4) F_(x,k,gc+(len>>1),G-5);
-  W_(x,k,gc+len+x.ri(3,5));
-  return k; }
-
-// جزر تنهار فوق حفرة (صعب)
-function ch_crumble_islands(x) { const k=mk();
-  const gc=4, len=20; k.ga.push({c:gc,len});
-  const rows=[G-1,G-2,G-1,G-2];
-  for (let i=0;i<4;i++){ const c=gc+1+i*5;
-    for (let j=0;j<3;j++) k.cr.push({c:c+j,r:rows[i]});
-    coinsH(k,c,3,rows[i]-1);
-  }
-  F_(x,k,gc+9,G-6);
-  W_(x,k,gc+len+3);
-  return k; }
-
-// نابض يقذفك إلى منصة عالية
-function ch_spring_tower(x) { const k=mk();
-  k.spr.push({c:5,r:G-1});
-  brk(k,2,G-5,true);
-  plat(k,8,G-5,7); plat(k,17,G-4,5);
-  coinsH(k,9,5,G-8);
-  if (x.diff>=7) spk(x,k,10);
-  W_(x,k,x.ri(20,24));
-  if (x.diff>=4) F_(x,k,14,G-7);
-  return k; }
-
-// جزر في السماء — نابض إجباري للصعود
-function ch_sky_islands(x) { const k=mk();
-  const gc=5, len=18; k.ga.push({c:gc,len});
-  k.spr.push({c:3,r:G-1});
-  plat(k,7,G-5,5); plat(k,14,G-4,3); plat(k,19,G-3,3);
-  arc(k,12,4,G-8,1);
-  if (x.diff>=4) F_(x,k,16,G-7);
-  W_(x,k,gc+len+3);
-  return k; }
-
-// جنة العملات
-function ch_coin_heaven(x) { const k=mk();
-  k.spr.push({c:4,r:G-1});
-  plat(k,8,G-5,10);
-  coinsH(k,9,8,G-7); coinsH(k,10,6,G-8);
-  coinsH(k,2,12,G-1,2);
-  coinsH(k,20,5,G-1,2);
-  if (x.diff>=3) W_(x,k,x.ri(21,25));
-  return k; }
-
-// أشواك على الأرض (مجموعة = صورة واحدة) مع أقواس عملات للقفز
-function ch_spikes(x) { const k=mk();
-  let c=x.ri(6,8);
-  for (let i=0;i<3;i++){
-    const v=(x.spk%2)+1, w=v===1?3:4;
-    if (c+w>24) break;
-    spk(x,k,c);
-    arc(k,c-1,w+2,G-2,3);
-    c+=w+x.ri(6,7);
-    if (i===0 && x.diff>=3 && x.rand()<.5) W_(x,k,c-3);
-    if (x.diff<8 && i>=1) break;
-  }
-  brk(k,x.ri(8,20),G-5,false);
-  if (x.diff>=5) F_(x,k,x.ri(10,20),G-6);
-  return k; }
-
-// منصة عليا آمنة فوق أرض مليئة بالأشواك
-function ch_spike_tunnel(x) { const k=mk();
-  plat(k,3,G-3,25);
-  let c=7;
-  while (c+4<=24){ const w=spk(x,k,c); c+=w+x.ri(3,4); }
-  W_(x,k,9); W_(x,k,20);
-  if (x.diff>=6) F_(x,k,12,G-6);
-  brk(k,14,G-8,true);
-  return k; }
-
-// حشد من الأعداء مع منصات للتهرب
-function ch_horde(x) { const k=mk();
-  [3,13,23].forEach(c=>plat(k,c,G-3,4));
-  const cnt=Math.min(3+(x.diff>>2),6);
-  for (let i=0;i<cnt;i++) W_(x,k,5+Math.floor(i*22/cnt),i%2?1:-1);
-  if (x.diff>=5) F_(x,k,10,G-5);
-  if (x.diff>=9) F_(x,k,22,G-5);
-  brk(k,14,G-8,x.rand()<.4);
-  return k; }
-
-// كمين طيور على ارتفاعات مختلفة
-function ch_flyers(x) { const k=mk();
-  const n=Math.min(2+(x.diff>>3),4);
-  for (let i=0;i<n;i++) F_(x,k,6+i*6,G-4-(i%3)*1.5|0,i%2?1:-1);
-  plat(k,x.ri(8,12),G-3,5);
-  arc(k,3,8,G-2,2);
-  W_(x,k,x.ri(18,24));
-  brk(k,x.ri(14,22),G-5,false);
-  return k; }
-
-// هضبة بدرجات: صعود 2 ثم 4 ثم سطح مرتفع ثم نزول (تضاريس غير مستوية)
-function ch_mesa(x) { const k=mk();
-  const top=x.diff>=10?5:4;
-  k.hl.push({c:4,len:2,h:2},{c:6,len:2,h:top-1>3?3:top-1},{c:8,len:10,h:top},{c:18,len:2,h:2});
-  coinsH(k,9,8,G-top-1);
-  if (x.diff>=3) W_(x,k,24);
-  if (x.diff>=6) F_(x,k,13,G-top-3);
-  return k; }
-
-// قطعة هادئة: أرض مستوية لتتسع للغرف السرية
+// ══════════════════════════════════════════════════════════════
+//  القطع الأصلية (المرجع — بدون تغيير)
+// ══════════════════════════════════════════════════════════════
+function ch_open(x) { const k=mk(); coinsH(k,2,13,G-1,2); const pc=x.ri(6,16), L=x.ri(4,6); plat(k,pc,G-3,L); brk(k,pc+1,G-8,x.rand()<.3); if (x.diff>=2) W_(x,k,x.ri(10,14)); if (x.diff>=4) W_(x,k,x.ri(20,26)); if (x.diff>=6) F_(x,k,x.ri(8,20),G-6); return k; }
+function ch_gap(x) { const k=mk(); const sz=x.ri(3,Math.min(5,3+(x.diff>>3))), gc=x.ri(6,12); k.ga.push({c:gc,len:sz}); coinsH(k,2,Math.max(1,(gc-3)>>1),G-1,2); arc(k,gc-1,sz+2,G-2,3); if (sz>=5) plat(k,gc+(sz>>1)-1,G-3,2,false); brk(k,gc+sz+2,G-5,false); W_(x,k,gc+sz+x.ri(4,6)); if (x.diff>=3) F_(x,k,gc+(sz>>1),G-6); return k; }
+function ch_gap_series(x) { const k=mk(); const maxSz=Math.min(4,2+(x.diff>>3)+(x.diff>=3?1:0)); let c=x.ri(5,6), n=0; while (n<3){ const sz=x.ri(2,maxSz); if (c+sz>26) break; k.ga.push({c,len:sz}); arc(k,c-1,sz+2,G-2,3); c+=sz+x.ri(4,5); n++; } if (x.diff>=2) W_(x,k,x.ri(3,5)+ (k.ga[0]?k.ga[0].c+k.ga[0].len+1:8)); if (x.diff>=5) F_(x,k,x.ri(10,22),G-6); brk(k,x.ri(8,22),G-5,x.rand()<.3); return k; }
+function ch_mountain(x) { const k=mk(); const hmax=x.diff<4?2:3; let c=x.ri(3,5); for (let h=1;h<=hmax;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; } const pl=x.ri(4,6); k.hl.push({c,len:pl,h:hmax}); coinsH(k,c,pl,G-hmax-1); brk(k,c+(pl>>1),G-hmax-5,x.rand()<.4); if (x.diff>=3) W_(x,k,c+1); c+=pl; for (let h=hmax-1;h>=1;h--){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; } if (x.diff>=5) F_(x,k,c-pl,G-8); if (x.diff>=2) W_(x,k,Math.min(c+3,26)); return k; }
+function ch_pillars(x) { const k=mk(); let c=x.ri(4,5); const n=x.diff>=8?4:3; for (let i=0;i<n&&c<=24;i++){ const h=x.ri(2,3); k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); if (i>0 && x.diff>=2) W_(x,k,c-3); c+=2+x.ri(4,5); } if (x.diff>=5) F_(x,k,x.ri(10,18),G-6); brk(k,x.ri(8,20),G-5,x.rand()<.3); return k; }
+function ch_pit(x) { const k=mk(); const gc=x.ri(4,5), len=x.ri(9,12); k.ga.push({c:gc,len}); let cur=gc, r=G-2; for (;;) { const L=x.ri(2,3); plat(k,cur,r,L); if (cur+L>=gc+len-2) break; cur+=L+x.ri(2,3); r=Math.max(G-4,Math.min(G-2,r+x.ri(-1,1))); } if (x.diff>=3) F_(x,k,gc+(len>>1),G-6); W_(x,k,gc+len+x.ri(3,5)); return k; }
+function ch_crumble(x) { const k=mk(); const gc=x.ri(4,5), len=x.ri(8,11); k.ga.push({c:gc,len}); const alt=x.diff>=9 && x.rand()<.6; for (let i=0;i<len;i++){ if (alt && i%3===2) continue; k.cr.push({c:gc+i,r:G}); } coinsH(k,gc,len,G-2); if (x.diff>=4) F_(x,k,gc+(len>>1),G-5); W_(x,k,gc+len+x.ri(3,5)); return k; }
+function ch_crumble_islands(x) { const k=mk(); const gc=4, len=20; k.ga.push({c:gc,len}); const rows=[G-1,G-2,G-1,G-2]; for (let i=0;i<4;i++){ const c=gc+1+i*5; for (let j=0;j<3;j++) k.cr.push({c:c+j,r:rows[i]}); coinsH(k,c,3,rows[i]-1); } F_(x,k,gc+9,G-6); W_(x,k,gc+len+3); return k; }
+function ch_spring_tower(x) { const k=mk(); k.spr.push({c:5,r:G-1}); brk(k,2,G-5,true); plat(k,8,G-5,7); plat(k,17,G-4,5); coinsH(k,9,5,G-8); if (x.diff>=7) spk(x,k,10); W_(x,k,x.ri(20,24)); if (x.diff>=4) F_(x,k,14,G-7); return k; }
+function ch_sky_islands(x) { const k=mk(); const gc=5, len=18; k.ga.push({c:gc,len}); k.spr.push({c:3,r:G-1}); plat(k,7,G-5,5); plat(k,14,G-4,3); plat(k,19,G-3,3); arc(k,12,4,G-8,1); if (x.diff>=4) F_(x,k,16,G-7); W_(x,k,gc+len+3); return k; }
+function ch_coin_heaven(x) { const k=mk(); k.spr.push({c:4,r:G-1}); plat(k,8,G-5,10); coinsH(k,9,8,G-7); coinsH(k,10,6,G-8); coinsH(k,2,12,G-1,2); coinsH(k,20,5,G-1,2); if (x.diff>=3) W_(x,k,x.ri(21,25)); return k; }
+function ch_spikes(x) { const k=mk(); let c=x.ri(6,8); for (let i=0;i<3;i++){ const v=(x.spk%2)+1, w=v===1?3:4; if (c+w>24) break; spk(x,k,c); arc(k,c-1,w+2,G-2,3); c+=w+x.ri(6,7); if (i===0 && x.diff>=3 && x.rand()<.5) W_(x,k,c-3); if (x.diff<8 && i>=1) break; } brk(k,x.ri(8,20),G-5,false); if (x.diff>=5) F_(x,k,x.ri(10,20),G-6); return k; }
+function ch_spike_tunnel(x) { const k=mk(); plat(k,3,G-3,25); let c=7; while (c+4<=24){ const w=spk(x,k,c); c+=w+x.ri(3,4); } W_(x,k,9); W_(x,k,20); if (x.diff>=6) F_(x,k,12,G-6); brk(k,14,G-8,true); return k; }
+function ch_horde(x) { const k=mk(); [3,13,23].forEach(c=>plat(k,c,G-3,4)); const cnt=Math.min(3+(x.diff>>2),6); for (let i=0;i<cnt;i++) W_(x,k,5+Math.floor(i*22/cnt),i%2?1:-1); if (x.diff>=5) F_(x,k,10,G-5); if (x.diff>=9) F_(x,k,22,G-5); brk(k,14,G-8,x.rand()<.4); return k; }
+function ch_flyers(x) { const k=mk(); const n=Math.min(2+(x.diff>>3),4); for (let i=0;i<n;i++) F_(x,k,6+i*6,G-4-(i%3)*1.5|0,i%2?1:-1); plat(k,x.ri(8,12),G-3,5); arc(k,3,8,G-2,2); W_(x,k,x.ri(18,24)); brk(k,x.ri(14,22),G-5,false); return k; }
+function ch_mesa(x) { const k=mk(); const top=x.diff>=10?5:4; k.hl.push({c:4,len:2,h:2},{c:6,len:2,h:top-1>3?3:top-1},{c:8,len:10,h:top},{c:18,len:2,h:2}); coinsH(k,9,8,G-top-1); if (x.diff>=3) W_(x,k,24); if (x.diff>=6) F_(x,k,13,G-top-3); return k; }
 function ch_quiet(x) { const k=mk(); coinsH(k,2,8,G-1,3); return k; }
-
-// جدار كتل قابل للكسر أو القفز
-function ch_block_wall(x) { const k=mk();
-  k.am.push({c:4,r:G-1});
-  const w1=x.ri(10,13);
-  for (let r=G-3;r<=G-1;r++) brk(k,w1,r,r===G-3);
-  coinsH(k,w1+2,4,G-1);
-  const w2=x.ri(20,24);
-  for (let r=G-3;r<=G-1;r++) brk(k,w2,r,false);
-  arc(k,w2-3,7,G-5,2);
-  W_(x,k,w1-4); if (x.diff>=4) W_(x,k,w1+5);
-  return k; }
-
-// قبو كتل معلّقة فوق منصة
-function ch_vault(x) { const k=mk();
-  plat(k,8,G-3,12);
-  for (let c=9;c<=18;c++) k.br.push({c,r:G-8,hasHeart:c===12||c===16});
-  for (let c=3;c<=6;c+=3) brk(k,c,G-5,false);
-  W_(x,k,x.ri(4,6)); W_(x,k,x.ri(22,26));
-  if (x.diff>=4) F_(x,k,14,G-6);
-  return k; }
-
-// منصات متعرجة بارتفاعات عشوائية
-function ch_zigzag(x) { const k=mk();
-  let r=G-3;
-  for (let i=0;i<5;i++){
-    plat(k,2+i*5,r,3);
-    r=Math.max(G-5,Math.min(G-2,r+x.ri(-2,2)));
-  }
-  const gc=x.ri(8,18); if (x.diff>=3 && !k.p.some(p=>gc+3>p.c && gc<p.c+p.len)) k.ga.push({c:gc,len:3});
-  W_(x,k,x.ri(4,8)); W_(x,k,x.ri(20,26));
-  if (x.diff>=5) F_(x,k,x.ri(10,20),G-7);
-  return k; }
-
-// منطقة راحة: ذخيرة وقلوب بلا أعداء
-function ch_rest(x) { const k=mk();
-  coinsH(k,2,13,G-1,2);
-  k.am.push({c:14,r:G-1});
-  brk(k,10,G-5,true); brk(k,18,G-5,false);
-  return k; }
-
-// ساحة الزعيم
-function ch_boss(x) { const k=mk();
-  plat(k,2,G-3,5); plat(k,12,G-5,7); plat(k,23,G-3,5);
-  k.am.push({c:4,r:G-1});
-  k.en.push({type:x.B,c:14,r:G-8,fly:true,dir:-1});
-  if (x.diff>=25) k.en.push({type:x.B,c:22,r:G-8,fly:true,dir:1});
-  F_(x,k,5,G-5,1); F_(x,k,24,G-5,-1);
-  W_(x,k,3,1); W_(x,k,26,-1); if (x.diff>=10) W_(x,k,14,1);
-  k.br.push({c:13,r:G-10+2,hasHeart:true},{c:17,r:G-10+2,hasHeart:true});
-  coinsH(k,2,27,G-1,2); coinsH(k,12,7,G-6);
-  return k; }
-
-// نهاية: درج نحو العلم
-function ch_finale(x) { const k=mk();
-  coinsH(k,2,14,G-1,2);
-  W_(x,k,10); if (x.diff>=6) W_(x,k,15);
-  k.hl.push({c:19,len:2,h:1},{c:21,len:2,h:2},{c:23,len:3,h:3});
-  coinsH(k,19,2,G-2); coinsH(k,21,2,G-3); coinsH(k,23,3,G-4);
-  return k; }
+function ch_block_wall(x) { const k=mk(); k.am.push({c:4,r:G-1}); const w1=x.ri(10,13); for (let r=G-3;r<=G-1;r++) brk(k,w1,r,r===G-3); coinsH(k,w1+2,4,G-1); const w2=x.ri(20,24); for (let r=G-3;r<=G-1;r++) brk(k,w2,r,false); arc(k,w2-3,7,G-5,2); W_(x,k,w1-4); if (x.diff>=4) W_(x,k,w1+5); return k; }
+function ch_vault(x) { const k=mk(); plat(k,8,G-3,12); for (let c=9;c<=18;c++) k.br.push({c,r:G-8,hasHeart:c===12||c===16}); for (let c=3;c<=6;c+=3) brk(k,c,G-5,false); W_(x,k,x.ri(4,6)); W_(x,k,x.ri(22,26)); if (x.diff>=4) F_(x,k,14,G-6); return k; }
+function ch_zigzag(x) { const k=mk(); let r=G-3; for (let i=0;i<5;i++){ plat(k,2+i*5,r,3); r=Math.max(G-5,Math.min(G-2,r+x.ri(-2,2))); } const gc=x.ri(8,18); if (x.diff>=3 && !k.p.some(p=>gc+3>p.c && gc<p.c+p.len)) k.ga.push({c:gc,len:3}); W_(x,k,x.ri(4,8)); W_(x,k,x.ri(20,26)); if (x.diff>=5) F_(x,k,x.ri(10,20),G-7); return k; }
+function ch_rest(x) { const k=mk(); coinsH(k,2,13,G-1,2); k.am.push({c:14,r:G-1}); brk(k,10,G-5,true); brk(k,18,G-5,false); return k; }
+function ch_boss(x) { const k=mk(); plat(k,2,G-3,5); plat(k,12,G-5,7); plat(k,23,G-3,5); k.am.push({c:4,r:G-1}); k.en.push({type:x.B,c:14,r:G-8,fly:true,dir:-1}); if (x.diff>=25) k.en.push({type:x.B,c:22,r:G-8,fly:true,dir:1}); F_(x,k,5,G-5,1); F_(x,k,24,G-5,-1); W_(x,k,3,1); W_(x,k,26,-1); if (x.diff>=10) W_(x,k,14,1); k.br.push({c:13,r:G-10+2,hasHeart:true},{c:17,r:G-10+2,hasHeart:true}); coinsH(k,2,27,G-1,2); coinsH(k,12,7,G-6); return k; }
+function ch_finale(x) { const k=mk(); coinsH(k,2,14,G-1,2); W_(x,k,10); if (x.diff>=6) W_(x,k,15); k.hl.push({c:19,len:2,h:1},{c:21,len:2,h:2},{c:23,len:3,h:3}); coinsH(k,19,2,G-2); coinsH(k,21,2,G-3); coinsH(k,23,3,G-4); return k; }
 
 // ══════════════════════════════════════════════════════════════
-//  قطع جديدة (الدفعة 1 — عالم Nature) — كل قطعة عرضها 30 عموداً
-//  تستخدم فقط: plat, brk, coinsH, arc, spk, W_, F_
+//  11 قطعة Nature جديدة
 // ══════════════════════════════════════════════════════════════
+function ch_low_arc(x){const k=mk();coinsH(k,2,10,G-1,1);arc(k,4,8,G-2,2);if(x.diff>=3)spk(x,k,14);if(x.diff>=5)W_(x,k,22);return k;}
+function ch_double_gap(x){const k=mk();const g1=x.ri(6,8),g2=g1+x.ri(6,7);const w1=Math.min(4,2+(x.diff>>3)),w2=Math.min(5,3+(x.diff>>3));k.ga.push({c:g1,len:w1});k.ga.push({c:g2,len:w2});plat(k,g1+w1+1,G-2,Math.max(2,g2-(g1+w1)-2),true);arc(k,g1-1,w1+2,G-2,2);arc(k,g2-1,w2+2,G-2,2);if(x.diff>=6)F_(x,k,(g1+g2)>>1,G-6);return k;}
+function ch_stair_tower(x){const k=mk();const base=x.ri(4,6);const steps=x.diff>=8?4:3;for(let i=0;i<steps;i++){plat(k,base+i*4,G-3-i*2,3);coinsH(k,base+i*4,3,G-4-i*2);}const topC=base+steps*4;k.am.push({c:Math.min(topC,25),r:G-3-steps*2});if(x.diff>=5)F_(x,k,base+(steps*4>>1),G-7);if(x.diff>=3)W_(x,k,Math.min(topC+4,26));return k;}
+function ch_stairs_up(x){const k=mk();const hmax=x.diff>=8?4:3;let c=x.ri(3,4);for(let h=1;h<=hmax&&c+2<=24;h++){k.hl.push({c,len:2,h});coinsH(k,c,2,G-h-1);c+=2;}const peak=c;k.hl.push({c:peak,len:3,h:hmax});coinsH(k,peak,3,G-hmax-1);k.am.push({c:peak+1,r:G-hmax-1});c+=3;for(let h=hmax-1;h>=1&&c+2<=26;h--){k.hl.push({c,len:2,h});coinsH(k,c,2,G-h-1);c+=2;}if(x.diff>=4)W_(x,k,Math.min(c+1,26));return k;}
+function ch_zig_zig(x){const k=mk();const n=x.diff>=6?5:4;let r=G-3,c=x.ri(2,3);for(let i=0;i<n;i++){const len=3;plat(k,c,r,len);coinsH(k,c,len,r-1);c+=len+x.ri(2,3);r=Math.max(G-5,Math.min(G-2,r+(i%2===0?-1:1)));if(c+len>27)break;}if(x.diff>=4)F_(x,k,14,G-6);if(x.diff>=3)W_(x,k,24);return k;}
+function ch_tunnel(x){const k=mk();plat(k,3,G-4,24);coinsH(k,4,22,G-5,2);coinsH(k,5,20,G-2,2);const cnt=Math.min(2+(x.diff>>3),4);for(let i=0;i<cnt;i++)W_(x,k,6+Math.floor(i*18/cnt),i%2?1:-1);if(x.diff>=5)F_(x,k,14,G-6);return k;}
+function ch_wall_shoot(x){const k=mk();const c=x.ri(8,12);for(let r=G-3;r<G;r++)brk(k,c,r,r===G-3);k.am.push({c:c-3,r:G-1});k.am.push({c:c+4,r:G-1});coinsH(k,c+2,4,G-1);plat(k,c-1,G-5,3);coinsH(k,c-1,3,G-6);if(x.diff>=4)W_(x,k,c+6);return k;}
+function ch_spring_chain(x){const k=mk();k.spr.push({c:5,r:G-1});plat(k,8,G-5,5);coinsH(k,8,5,G-6);k.spr.push({c:15,r:G-1});plat(k,18,G-4,6);coinsH(k,18,6,G-5);if(x.diff>=4)F_(x,k,12,G-8);if(x.diff>=6)W_(x,k,24);return k;}
+function ch_spike_field(x){const k=mk();let c=x.ri(7,9);const cnt=x.diff>=8?2:1;for(let i=0;i<cnt&&c+5<=22;i++){const w=spk(x,k,c);arc(k,c-1,w+2,G-2,3);c+=w+6;}if(x.diff>=3)W_(x,k,Math.min(c+2,26));brk(k,4,G-5,false);return k;}
+function ch_oasis(x){const k=mk();coinsH(k,2,26,G-1,1);k.am.push({c:8,r:G-1});k.am.push({c:20,r:G-1});brk(k,14,G-5,true);brk(k,5,G-5,false);brk(k,23,G-5,false);plat(k,10,G-3,8,false);return k;}
+function ch_pre_finale(x){const k=mk();let c=4;for(let h=1;h<=3;h++){k.hl.push({c,len:2,h});coinsH(k,c,2,G-h-1);c+=2;}k.hl.push({c,len:8,h:3});coinsH(k,c,8,G-4);k.am.push({c:c+3,r:G-4});if(x.diff>=6)F_(x,k,c+4,G-7);if(x.diff>=4)W_(x,k,c+6);k.hl.push({c:c+8,len:2,h:2},{c:c+10,len:2,h:1});return k;}
+// ══════════════════════════════════════════════════════════════
+//  6 قطع Graveyard جديدة
+// ══════════════════════════════════════════════════════════════
+function ch_grave_bones(x){const k=mk();const c1=x.ri(7,9);const w1=spk(x,k,c1);arc(k,c1-1,w1+2,G-2,3);const c2=c1+w1+6;if(c2+4<=22){const w2=spk(x,k,c2);arc(k,c2-1,w2+2,G-2,3);}if(x.diff>=3)F_(x,k,c1+4,G-6);if(x.diff>=6)F_(x,k,Math.min(c2+2,26),G-5);coinsH(k,2,8,G-3,2);brk(k,22,G-5,false);return k;}
+function ch_grave_crypt(x){const k=mk();plat(k,4,G-5,20);k.hl.push({c:8,len:2,h:2},{c:18,len:2,h:2});coinsH(k,5,18,G-4,2);W_(x,k,6,1);if(x.diff>=4)W_(x,k,13,-1);if(x.diff>=7)W_(x,k,21,1);k.am.push({c:11,r:G-1});if(x.diff>=5)F_(x,k,15,G-6);return k;}
+function ch_grave_tomb_pit(x){const k=mk();const gc=x.ri(5,6);const len=x.ri(9,11);k.ga.push({c:gc,len});for(let i=0;i<len;i+=3){k.cr.push({c:gc+i,r:G-1});if(i+1<len)k.cr.push({c:gc+i+1,r:G-1});}arc(k,gc-1,len+2,G-2,3);F_(x,k,gc+(len>>1),G-6);if(x.diff>=6)F_(x,k,gc+2,G-5);return k;}
+function ch_grave_bat_corridor(x){const k=mk();plat(k,4,G-3,3);plat(k,12,G-4,3);plat(k,20,G-3,3);const n=Math.min(2+(x.diff>>3),4);for(let i=0;i<n;i++)F_(x,k,5+i*6,G-4-(i%2),i%2?-1:1);coinsH(k,5,4,G-6);coinsH(k,12,3,G-6);if(x.diff>=4)W_(x,k,9);brk(k,16,G-5,false);return k;}
+function ch_grave_catacomb(x){const k=mk();plat(k,3,G-5,8);coinsH(k,3,8,G-4);W_(x,k,6);plat(k,13,G-3,3);k.am.push({c:14,r:G-4});plat(k,18,G-5,8);coinsH(k,18,8,G-4);if(x.diff>=4)W_(x,k,22);if(x.diff>=7)F_(x,k,11,G-6);brk(k,16,G-5,false);return k;}
+function ch_grave_crumble_bats(x){const k=mk();const gc=x.ri(5,6);const len=x.ri(10,12);k.ga.push({c:gc,len});for(let i=0;i<len;i++){if(i%4===3)continue;k.cr.push({c:gc+i,r:G-1});}for(let i=0;i<len;i+=3)k.co.push({c:gc+i,r:G-2});F_(x,k,gc+3,G-6);if(x.diff>=5)F_(x,k,gc+(len>>1),G-5);if(x.diff>=8)F_(x,k,Math.min(gc+len-3,28),G-6);return k;}
 
-// عملات على ارتفاع منخفض — تعليم أساسي للقفز
-function ch_low_arc(x) { const k=mk();
-  coinsH(k,2,10,G-1,1);
-  arc(k,4,8,G-2,2);
-  if (x.diff>=3) spk(x,k,14);
-  if (x.diff>=5) W_(x,k,22);
-  return k; }
-
-// فجوتان متتاليتان بمنصة بينهما — دقة
-function ch_double_gap(x) { const k=mk();
-  const g1=x.ri(5,7), g2=g1+x.ri(6,8);
-  const w1=Math.min(4,2+(x.diff>>3)), w2=Math.min(5,3+(x.diff>>3));
-  k.ga.push({c:g1,len:w1}); k.ga.push({c:g2,len:w2});
-  plat(k,g1+w1+1,G-2,Math.max(2,g2-(g1+w1)-2),true);
-  arc(k,g1-1,w1+2,G-2,2);
-  arc(k,g2-1,w2+2,G-2,2);
-  if (x.diff>=6) F_(x,k,(g1+g2)>>1,G-6);
-  return k; }
-
-// برج مدرّج — تسلّق بمنصات ثم ذخيرة في القمة
-function ch_stair_tower(x) { const k=mk();
-  const base=x.ri(4,6), steps=x.diff>=8?4:3;
-  for (let i=0;i<steps;i++){
-    const r=Math.max(2,G-3-i*2);                       // لا يخرج فوق أعلى الخريطة
-    plat(k,base+i*4,r,3);
-    coinsH(k,base+i*4,3,r-1);
-  }
-  const topC=base+steps*4;
-  k.am.push({c:Math.min(topC,25), r:Math.max(2,G-3-steps*2)+0});
-  if (x.diff>=5) F_(x,k,base+((steps*4)>>1),G-7);
-  if (x.diff>=3) W_(x,k,Math.min(topC+4,26));
-  return k; }
-
-// درج صاعد + هضبة ذروة + نزول
-function ch_stairs_up(x) { const k=mk();
-  const hmax=x.diff>=8?4:3; let c=x.ri(3,4);
-  for (let h=1;h<=hmax&&c+2<=24;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
-  const peak=c;
-  k.hl.push({c:peak,len:3,h:hmax}); coinsH(k,peak,3,G-hmax-1);
-  k.am.push({c:peak+1,r:G-hmax-1});
-  c+=3;
-  for (let h=hmax-1;h>=1&&c+2<=26;h--){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
-  if (x.diff>=4) W_(x,k,Math.min(c+1,26));
-  return k; }
-
-// منصات متناوبة صعوداً وهبوطاً
-function ch_zig_zig(x) { const k=mk();
-  const n=x.diff>=6?5:4; let r=G-3, c=x.ri(2,3);
-  for (let i=0;i<n;i++){
-    const len=3; plat(k,c,r,len); coinsH(k,c,len,r-1);
-    c+=len+x.ri(2,3);
-    r=Math.max(G-5,Math.min(G-2,r+(i%2===0?-1:1)));
-    if (c+len>27) break;
-  }
-  if (x.diff>=4) F_(x,k,14,G-6);
-  if (x.diff>=3) W_(x,k,24);
-  return k; }
-
-// نفق منصات منخفض — سقف + أعداء أرضيون
-function ch_tunnel(x) { const k=mk();
-  plat(k,3,G-4,24);
-  coinsH(k,4,22,G-5,2);
-  coinsH(k,5,20,G-2,2);
-  const cnt=Math.min(2+(x.diff>>3),4);
-  for (let i=0;i<cnt;i++) W_(x,k,6+Math.floor(i*18/cnt),i%2?1:-1);
-  if (x.diff>=5) F_(x,k,14,G-6);
-  return k; }
-
-// جدار كتل يُكسر بالرصاص
-function ch_wall_shoot(x) { const k=mk();
-  const c=x.ri(8,12);
-  for (let r=G-3;r<G;r++) brk(k,c,r,r===G-3);
-  k.am.push({c:c-3,r:G-1});
-  k.am.push({c:c+4,r:G-1});
-  coinsH(k,c+2,4,G-1);
-  plat(k,c-1,G-5,3); coinsH(k,c-1,3,G-6);
-  if (x.diff>=4) W_(x,k,c+6);
-  return k; }
-
-// نابضان متتاليان
-function ch_spring_chain(x) { const k=mk();
-  k.spr.push({c:5,r:G-1});
-  plat(k,8,G-5,5); coinsH(k,8,5,G-6);
-  k.spr.push({c:15,r:G-1});
-  plat(k,18,G-4,6); coinsH(k,18,6,G-5);
-  if (x.diff>=4) F_(x,k,12,G-8);
-  if (x.diff>=6) W_(x,k,24);
-  return k; }
-
-// ساحة أشواك على أرض مستوية
-function ch_spike_field(x) { const k=mk();
-  let c=x.ri(4,6); const cnt=x.diff>=8?3:2;
-  for (let i=0;i<cnt&&c+5<=26;i++){ const w=spk(x,k,c); arc(k,c-1,w+2,G-2,3); c+=w+4; }
-  if (x.diff>=3) W_(x,k,Math.min(c+2,26));
-  brk(k,4,G-5,false);
-  return k; }
-
-// واحة: راحة طويلة بقلب وذخيرة وعملات
-function ch_oasis(x) { const k=mk();
-  coinsH(k,2,26,G-1,1);
-  k.am.push({c:8,r:G-1}); k.am.push({c:20,r:G-1});
-  brk(k,14,G-5,true); brk(k,5,G-5,false); brk(k,23,G-5,false);
-  plat(k,10,G-3,8,false);
-  return k; }
-
-// تحدي قبل العلم — هضبة مرتفعة
-function ch_pre_finale(x) { const k=mk();
-  let c=4;
-  for (let h=1;h<=3;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
-  k.hl.push({c,len:8,h:3}); coinsH(k,c,8,G-4);
-  k.am.push({c:c+3,r:G-4});
-  if (x.diff>=6) F_(x,k,c+4,G-7);
-  if (x.diff>=4) W_(x,k,c+6);
-  k.hl.push({c:c+8,len:2,h:2},{c:c+10,len:2,h:1});
-  return k; }
-
-const CHUNKS_NEW = {
-  low_arc:ch_low_arc, double_gap:ch_double_gap, stair_tower:ch_stair_tower, stairs_up:ch_stairs_up,
-  zig_zig:ch_zig_zig, tunnel:ch_tunnel, wall_shoot:ch_wall_shoot, spring_chain:ch_spring_chain,
-  spike_field:ch_spike_field, oasis:ch_oasis, pre_finale:ch_pre_finale,
-};
-
+// ══════════════════════════════════════════════════════════════
+//  جدول CHUNKS الموحّد
+// ══════════════════════════════════════════════════════════════
 const CHUNKS = {
+  // الأصلية
   open:ch_open, gap:ch_gap, gap_series:ch_gap_series, mountain:ch_mountain, pillars:ch_pillars, pit:ch_pit,
   crumble:ch_crumble, crumble_islands:ch_crumble_islands, spring_tower:ch_spring_tower,
   sky_islands:ch_sky_islands, coin_heaven:ch_coin_heaven, spikes:ch_spikes,
   spike_tunnel:ch_spike_tunnel, horde:ch_horde, flyers:ch_flyers, block_wall:ch_block_wall,
   vault:ch_vault, quiet:ch_quiet, mesa:ch_mesa, zigzag:ch_zigzag, rest:ch_rest, boss:ch_boss, finale:ch_finale,
-};
-
-Object.assign(CHUNKS, CHUNKS_NEW);
-
-// ══════════════════════════════════════════════════════════════
-//  أنماط المراحل (Archetypes) — كل مرحلة لها هوية مختلفة
-// ══════════════════════════════════════════════════════════════
-const ARCH = {
-  tutorial: ['open','gap','gap','mountain','vault','coin_heaven'],
-  classic:  ['open','gap','gap_series','mountain','mesa','horde','spikes','zigzag','pit','flyers'],
-  hills:    ['mountain','mesa','pillars','mesa','gap','gap_series','horde','vault'],
-  sky:      ['pit','pit','crumble','sky_islands','spring_tower','coin_heaven','flyers'],
-  gauntlet: ['spikes','spikes','spike_tunnel','gap','gap_series','horde','pillars','zigzag'],
-  bounce:   ['spring_tower','spring_tower','coin_heaven','sky_islands','open','zigzag'],
-  crumble:  ['crumble','crumble','crumble_islands','gap','gap_series','horde','spikes','mountain'],
-  cave:     ['vault','block_wall','block_wall','pillars','spike_tunnel','gap_series','horde','zigzag'],
-  rush:     ['horde','horde','flyers','flyers','gap_series','pillars','gap'],
-  treasure: ['coin_heaven','mesa','vault','zigzag','gap','spring_tower','gap_series'],
-  mix:      ['open','gap','gap_series','gap','mountain','pillars','pit','crumble','spring_tower','sky_islands',
-             'coin_heaven','spikes','spike_tunnel','horde','flyers','block_wall','vault','mesa','zigzag'],
-};
-const ARCH_ROT = ['classic','hills','sky','gauntlet','bounce','crumble','cave','rush','treasure','mix'];
-
-// نكهة كل عالم (تُضاف لقائمة القطع المحتملة)
-const WORLD_BIAS = {
-  nature:    ['mountain','mesa','spring_tower','coin_heaven','gap_series'],
-  graveyard: ['crumble','spikes','vault','gap_series'],
-  winter:    ['pit','mesa','sky_islands','crumble_islands'],
-  desert:    ['pillars','mesa','spikes','horde','block_wall','gap_series'],
-};
-
-// أقل صعوبة تظهر عندها القطعة
-const MIN_DIFF = { mesa:2, gap_series:2, crumble_islands:5, spike_tunnel:4, horde:3, flyers:2, spikes:2,
-                   crumble:3, pit:3, sky_islands:3, block_wall:2 };
-const PITS = new Set(['gap','gap_series','pit','crumble','crumble_islands','sky_islands']);
-
-// ══════════════════════════════════════════════════════════════
-//  خطط المراحل — عالم Nature (1–25)
-//  هذه الخطط تحلّ محل المراحل 1–25 بالكامل (تتقدّم على TMX_LEVELS القديمة).
-// ══════════════════════════════════════════════════════════════
-const LEVEL_PLANS = {
-  1:  { arch:'tutorial', sig:'flat+coin-trails',      seq:['open','low_arc','gap','open','finale'] },
-  2:  { arch:'tutorial', sig:'first-jump-lesson',     seq:['open','gap','gap','low_arc','coin_heaven','finale'] },
-  3:  { arch:'tutorial', sig:'first-platform',        seq:['open','stair_tower','gap','mountain','finale'] },
-  4:  { arch:'tutorial', sig:'first-spring',          seq:['open','spring_chain','gap','low_arc','finale'] },
-  5:  { arch:'tutorial', isBoss:true, sig:'mini-boss-1', seq:['open','gap','mountain','stairs_up','rest','boss'] },
-  6:  { arch:'classic',  sig:'gap-series-intro',      seq:['open','gap_series','gap','stair_tower','finale'] },
-  7:  { arch:'classic',  sig:'double-jump-precision', seq:['open','double_gap','low_arc','double_gap','finale'] },
-  8:  { arch:'classic',  sig:'spike-intro',           seq:['open','spike_field','gap','mountain','finale'] },
-  9:  { arch:'classic',  sig:'shoot-the-wall',        seq:['open','wall_shoot','gap','spring_chain','finale'] },
-  10: { arch:'classic',  isBoss:true, sig:'mini-boss-2', seq:['open','gap','gap_series','zig_zig','rest','boss'] },
-  11: { arch:'hills',    sig:'hill-assault',          seq:['open','mountain','double_gap','stairs_up','spike_field','finale'] },
-  12: { arch:'hills',    sig:'sky-vault-intro',       seq:['open','spring_chain','vault','gap','zig_zig','finale'] },
-  13: { arch:'hills',    sig:'pit-trial',             seq:['open','pit','gap_series','tunnel','finale'] },
-  14: { arch:'hills',    sig:'flyer-trial',           seq:['open','flyers','gap','horde','spike_field','finale'] },
-  15: { arch:'hills',    isBoss:true, sig:'boss-arena-1', seq:['open','gap','zig_zig','rest','boss','pre_finale'] },
-  16: { arch:'gauntlet', sig:'gauntlet-1',            seq:['open','spike_field','gap_series','tunnel','stairs_up','spike_field','finale'] },
-  17: { arch:'gauntlet', sig:'vertical-mastery',      seq:['open','stair_tower','zig_zig','stair_tower','gap_series','finale'] },
-  18: { arch:'gauntlet', sig:'fortress',              seq:['open','wall_shoot','horde','spike_field','tunnel','finale'] },
-  19: { arch:'gauntlet', sig:'aerial-trial',          seq:['open','flyers','zig_zig','pit','flyers','finale'] },
-  20: { arch:'gauntlet', isBoss:true, sig:'boss-arena-2', seq:['open','horde','gap_series','rest','boss','pre_finale'] },
-  21: { arch:'rush',     sig:'final-rush-1',          seq:['open','double_gap','spike_field','horde','gap_series','spike_field','finale'] },
-  22: { arch:'rush',     sig:'final-rush-2',          seq:['open','pit','gap_series','flyers','zig_zig','horde','finale'] },
-  23: { arch:'rush',     sig:'mastery-combined',      seq:['open','wall_shoot','spike_field','tunnel','stairs_up','flyers','finale'] },
-  24: { arch:'rush',     sig:'penultimate',           seq:['open','double_gap','spike_field','horde','pit','spring_chain','spike_field','finale'] },
-  25: { arch:'rush',     isBoss:true, sig:'final-boss', seq:['open','horde','spike_field','gap_series','zig_zig','rest','boss','boss','pre_finale'] },
-};
-
-function planLevel(n, diff, worldIdx, theme, rand, ri, quietN) {
-  // خطة مكتوبة صراحةً لهذه المرحلة؟ استخدمها (مع احترام مقاطع الهدوء المطلوبة)
-  if (typeof LEVEL_PLANS!=='undefined' && LEVEL_PLANS[n]) {
-    const p=LEVEL_PLANS[n], body=p.seq.slice();
-    for (let q=0;q<(quietN||0);q++) body.splice(Math.max(1,Math.floor(body.length*(q+1)/((quietN||0)+1))),0,'quiet');
-    return { arch:p.arch, seq:body, isBoss:!!p.isBoss };
-  }
-  const arch = diff<=2 ? 'tutorial' : ARCH_ROT[(diff + worldIdx*4) % ARCH_ROT.length];
-  const isBoss = diff%5===0;
-  let nb = 4 + (diff/3|0) + ri(0,1);
-  if (arch==='treasure') nb -= 1;
-  if (arch==='rush')     nb += 1;
-  const pool = ARCH[arch].concat(arch==='tutorial'?[]:WORLD_BIAS[theme]).filter(t=>(MIN_DIFF[t]||0)<=diff);
-  const body=['open']; let p1='open', p2='';
-  for (let i=1;i<nb;i++){
-    let pick='open';
-    for (let t=0;t<14;t++){
-      const cand=pool[Math.floor(rand()*pool.length)];
-      if (cand===p1 || cand===p2) continue;
-      if (PITS.has(cand) && PITS.has(p1)) continue;
-      pick=cand; break;
-    }
-    body.push(pick); p2=p1; p1=pick;
-  }
-  if (nb>=8) body.splice(body.length>>1,0,'rest');
-  for (let q=0;q<(quietN||0);q++) body.splice(Math.max(1,Math.floor(body.length*(q+1)/((quietN||0)+1))),0,'quiet');
-  if (isBoss){ body.push('rest','boss'); } else body.push('finale');
-  return { arch, seq:body, isBoss };
-}
-
-// ══════════════════════════════════════════════════════════════
-//  توليد المرحلة
-// ══════════════════════════════════════════════════════════════
-// ═══ مراحل العالم الأول 1–10: مصمَّمة يدوياً ومُتحقَّق من إمكانية إنهائها بمحاكي فيزياء اللعبة ═══
-const TMX_LEVELS = {"1":{"hand":true,"name":"Sunny Meadow","cols":240,"rows":["................................................................................................................................................................................................................................................",".........................................................................................................................................qbb....................................................................................................","..................................................................h.q...........................................................................................................................................................................","................................................................................................................................................................................................................................................","................................................................................................=======.........................................................................................................................................","................................................................................................................................................................................................................................................",".....................................................................................................................................#######....................................................................................................","...............................................................######..............................................................###########..................................................................................................",".............................................................##########..........................................................###############...........................................#####................................................","############################...##################################################....##################################################################..==..#########################################....######################################","############################...##################################################....##################################################################......#########################################....######################################","############################...##################################################....##################################################################......#########################################....######################################","############################...##################################################....##################################################################......#########################################....######################################","############################...##################################################....##################################################################......#########################################....######################################"],"spikes":[],"walkers":[25,77,88,101,124,149,160,163,206],"flyers":[],"springs":[[94,8]],"coins":[[27,6],[28,5],[29,5],[30,5],[31,6],[80,6],[81,6],[82,5],[83,5],[84,6],[85,6],[96,3],[97,3],[98,3],[99,3],[100,3],[101,3],[102,3],[150,6],[151,5],[152,5],[153,4],[154,4],[155,5],[156,5],[157,6],[197,6],[198,6],[199,5],[200,5],[201,6],[202,6],[12,8],[13,8],[14,8],[15,8],[16,8],[17,8],[18,8],[19,8],[43,8],[45,8],[47,8],[49,8],[51,8],[53,8],[65,6],[66,6],[67,6],[68,6],[110,8],[112,8],[114,8],[116,8],[118,8],[120,8],[122,8],[124,8],[135,5],[136,5],[137,5],[138,5],[139,5],[187,7],[188,7],[189,7],[190,7],[191,7],[192,8],[193,8],[194,8],[195,8],[196,8]],"ammo":[[19,8],[168,8]],"stars":[47,115,173],"startCol":4,"boss":null,"trees":[],"dec":[]},"2":{"hand":true,"name":"Cliffside","cols":267,"rows":["..................................................................................................................................................q........................................................................................................................",".........................q...h...q...............................................h.........................................................................................................................................................................................","................................................................................bbb........................................................................................................................................................................................","...........................................................................................................................................................................................................................................................................","...........................................................................................................................................................................................................................................................................",".............................................................................................===.........................................###############.....######........................................................................................................","..................###################....................................................===..........................................##################.....########......................................................................................................","...............########################....................................#############........######.............................#####################.....##########..................................==................................................................","............#############################...............................################........########........................########################.....############.............................==....==.............................................................","###########################################..........................###################........########################################################.....########################################..........############################################################","########################################################################################........########################################################.....########################################..........############################################################","########################################################################################........########################################################.....########################################..........############################################################","########################################################################################........########################################################.....########################################..........############################################################","########################################################################################........########################################################.....########################################..........############################################################"],"spikes":[],"walkers":[30,51,59,65,122,173,211],"flyers":[[82,4],[142,3],[202,4]],"springs":[],"coins":[[89,5],[90,5],[91,5],[93,4],[94,4],[95,4],[151,5],[152,4],[153,3],[154,3],[155,3],[156,4],[157,5],[197,6],[198,5],[199,5],[200,4],[201,4],[202,4],[203,4],[204,5],[205,5],[206,6],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,7],[13,7],[12,7],[13,7],[14,7],[15,6],[16,6],[17,6],[18,5],[19,5],[20,5],[22,5],[23,5],[24,5],[25,5],[26,5],[27,5],[28,5],[29,5],[30,5],[31,5],[32,5],[33,5],[34,5],[35,5],[47,9],[49,9],[51,9],[53,9],[55,9],[57,9],[59,9],[61,9],[63,9],[65,9],[69,8],[70,8],[71,8],[72,7],[73,7],[74,7],[128,7],[129,7],[130,7],[131,6],[132,6],[133,6],[134,5],[135,5],[136,5],[141,4],[142,4],[143,4],[144,4],[145,4],[146,4],[147,4],[148,4],[149,4],[150,4]],"ammo":[[49,9]],"stars":[114,183,223],"startCol":4,"boss":null,"trees":[],"dec":[]},"3":{"hand":true,"name":"Stepping Stones","cols":233,"rows":[".........................................................................................................................................................................................................................................",".........................................................................................................................................................................................................................................","................................................................................h........................................................................................................................................................",".........................................................................................................................................................................................................................................",".........................................................................................................................................................................................................................................",".........................................................................................................................................................................................................................................","..............................................................==........................................................................................==...............................................................................","...........................................................==...............########.................................................................==....==............................................................................","...................==...................................==.......==.......############.............==....................................................................................................................................","##############.==......################################............##########################.===......===.##############################ccccc######..........##############################.......######################################","##############.........################################............##########################..............##############################.....######..........##############################.......######################################","##############.........################################............##########################..............##############################.....######..........##############################.......######################################","##############.........################################............##########################..............##############################.....######..........##############################.......######################################","##############.........################################............##########################..............##############################.....######..........##############################.......######################################"],"spikes":[],"walkers":[28,91,133,146,200,197],"flyers":[[61,4],[97,5],[103,4],[153,3]],"springs":[],"coins":[[14,7],[15,6],[16,5],[17,5],[18,5],[19,5],[20,5],[21,6],[22,7],[56,7],[57,7],[59,6],[60,6],[62,5],[63,5],[65,7],[66,7],[93,6],[94,5],[95,4],[96,4],[97,3],[98,3],[99,3],[100,3],[101,3],[102,3],[103,4],[104,4],[105,5],[106,6],[137,8],[138,8],[139,8],[140,8],[141,8],[149,6],[150,6],[152,5],[153,5],[155,6],[156,6],[187,6],[188,6],[189,5],[190,4],[191,4],[192,4],[193,5],[194,5],[195,6],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[78,6],[79,6],[80,6],[81,6],[82,6],[83,6]],"ammo":[[36,8]],"stars":[41,123,174],"startCol":4,"boss":null,"trees":[],"dec":[]},"4":{"hand":true,"name":"Thorn Garden","cols":254,"rows":["..............................................................................................................................................................................................................................................................","..............................................................................................................................................................................................................................................................","..............................................................................................................................................................................................................................................................","..............................................................................................................................................................................................................................................................",".............................................................................................................................................................................h................................................................................","..............................................................................................................................................................................................................................................................",".................................................................................................================.............................................................................................................................................","..................................................................................########....................................................................................................................................................................","................................................................................############..................................................................................................................................................................","################################################################################################################################################################################......########################################################################","################################################################################################################################################################################......########################################################################","################################################################################################################################################################################......########################################################################","################################################################################################################################################################################......########################################################################","################################################################################################################################################################################......########################################################################"],"spikes":[{"c":23,"w":2,"v":1},{"c":44,"w":2,"v":2},{"c":52,"w":2,"v":1},{"c":99,"w":2,"v":2},{"c":105,"w":2,"v":1},{"c":111,"w":2,"v":2},{"c":150,"w":2,"v":1},{"c":156,"w":2,"v":2},{"c":162,"w":2,"v":1},{"c":168,"w":2,"v":2},{"c":190,"w":2,"v":1},{"c":198,"w":2,"v":2}],"walkers":[36,74,114,184],"flyers":[[86,3],[173,4]],"springs":[],"coins":[[21,5],[22,5],[23,4],[24,4],[25,5],[26,5],[42,6],[43,5],[44,4],[45,4],[46,4],[47,5],[48,6],[50,5],[51,5],[52,4],[53,4],[54,5],[55,5],[97,5],[98,5],[99,5],[100,5],[101,5],[102,5],[103,5],[104,5],[105,5],[106,5],[107,5],[108,5],[109,5],[110,5],[111,5],[112,5],[148,5],[149,4],[150,4],[151,4],[152,5],[154,5],[155,4],[156,4],[157,4],[158,5],[160,5],[161,4],[162,4],[163,4],[164,5],[166,5],[167,4],[168,4],[169,4],[170,5],[175,6],[176,5],[177,5],[178,4],[179,4],[180,5],[181,5],[182,6],[188,5],[189,4],[190,4],[191,4],[192,5],[196,5],[197,4],[198,4],[199,4],[200,5],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[84,6],[85,6],[86,6],[87,6],[88,6],[89,6]],"ammo":[[14,8],[48,8],[120,8]],"stars":[66,132,210],"startCol":4,"boss":null,"trees":[],"dec":[]},"5":{"hand":true,"name":"Brick Fortress","cols":277,"rows":["...................##############..................h....................................######################.........................................................................##########################....................................................................","...................##############.................bbbbbb................................######################...........................bhbb..........................................##########################....................................................................",".....................................................................................................................................................................................................................................................................................",".....................................................................................................................................................................................................................................................................................","..................q..............................................................................................................................................................................h...................................................................................",".....................................................................................................................................................................................................................................................................................","..............................................############.............................................................................########.........b............................................................................................................................","............................................################.........................................................................############.......b............................................................................................................................","..........................................####################.....................................................................################.....b............................................................................................................................","######################################################################################################################.===.##############################################################################################......######################################################","######################################################################################################################.....##############################################################################################......######################################################","######################################################################################################################.....##############################################################################################......######################################################","######################################################################################################################.....##############################################################################################......######################################################","######################################################################################################################.....##############################################################################################......######################################################"],"spikes":[],"walkers":[26,81,94,102,108,171,187,195,201,241],"flyers":[[52,3],[140,3],[220,4]],"springs":[],"coins":[[117,6],[118,5],[119,4],[120,4],[121,4],[122,5],[123,6],[152,5],[153,8],[216,6],[217,5],[218,5],[219,4],[220,4],[221,5],[222,5],[223,6],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[19,8],[20,8],[21,8],[22,8],[23,8],[24,8],[25,8],[26,8],[27,8],[28,8],[29,8],[30,8],[31,8],[32,8],[48,5],[49,5],[50,5],[51,5],[52,5],[53,5],[54,5],[55,5],[56,5],[57,5],[88,8],[90,8],[92,8],[94,8],[96,8],[98,8],[100,8],[102,8],[104,8],[106,8],[108,8],[110,8],[112,8],[114,8],[116,8],[124,8],[126,8],[128,8],[130,8],[137,5],[138,5],[139,5],[140,5],[141,5],[142,5],[185,8],[186,8],[187,8],[188,8],[189,8],[190,8],[191,8],[192,8],[193,8],[194,8],[195,8],[196,8],[197,8],[198,8],[199,8],[200,8],[201,8],[202,8],[203,8],[204,8]],"ammo":[[184,8]],"stars":[72,167,231],"startCol":4,"boss":null,"trees":[],"dec":[]},"6":{"hand":true,"name":"Crumble Canyon","cols":222,"rows":["..............................................................................................................................................................................................................................","..............................................................................................................................................................................................................................","..............................................................................h...............................................................................................................................................","..............................................................................................................................................................................................................................","..............................................................................................................................................................................................................................","..............................................................................................................................................................................................................................","..............................................................................................................................................................................................................................","..........................................................................#######.........................................................===.................................................................................",".......................................................==...............###########........cccc...............................................................................................................................","##############cccccc##############################ccccc..ccccc#######################cccc........cccc##############################cccccc....##ccccc..ccccc..ccccc############################################################","##############......##############################............#######################................##############################..........##...................############################################################","##############......##############################............#######################................##############################..........##...................############################################################","##############......##############################............#######################................##############################..........##...................############################################################","##############......##############################............#######################................##############################..........##...................############################################################"],"spikes":[],"walkers":[12,24,66,125,166],"flyers":[[56,4],[89,3],[95,4],[152,4]],"springs":[],"coins":[[14,8],[15,8],[16,8],[17,8],[18,8],[19,8],[50,8],[51,8],[52,8],[53,8],[54,8],[57,8],[58,8],[59,8],[60,8],[61,8],[85,8],[86,8],[87,8],[88,8],[91,7],[92,7],[93,7],[94,7],[97,8],[98,8],[99,8],[100,8],[143,8],[144,8],[145,8],[146,8],[147,8],[150,8],[151,8],[152,8],[153,8],[154,8],[157,8],[158,8],[159,8],[160,8],[161,8],[148,6],[149,5],[150,6],[155,6],[156,5],[157,6],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[76,6],[77,6],[78,6],[79,6],[80,6]],"ammo":[[31,8]],"stars":[36,117,178],"startCol":4,"boss":null,"trees":[],"dec":[]},"7":{"hand":true,"name":"Sky Ladder","cols":239,"rows":["...............................................................................................................................................................................................................................................","...............................................................................................................................................................................................................................................","...............................................................................................................................................................................................................................................",".................................................................................................................................................##########....................................................................................","..................======........................................##############...................................................................############..................................................................................","................................===.............................################.................................................................##############................................................................................",".............................===................................##################...............................................................################..............................................................................","................................................................####################.............................................................##################............................................................................","................................................................######################...........................................................####################..........................................................................","############################.......#################################################################################..===...===...#################################################################......######################################","############################.......#################################################################################..............#################################################################......######################################","############################.......#################################################################################..............#################################################################......######################################","############################.......#################################################################################..............#################################################################......######################################","############################.......#################################################################################..............#################################################################......######################################"],"spikes":[],"walkers":[52,91,134,189,205],"flyers":[[70,2],[122,3],[150,1]],"springs":[[119,8],[125,8],[16,8],[60,8],[141,8]],"coins":[[18,3],[19,3],[20,3],[21,3],[22,3],[23,3],[27,6],[28,6],[29,5],[30,4],[31,4],[32,4],[33,5],[34,5],[35,6],[116,5],[117,4],[118,3],[119,3],[120,2],[121,2],[122,2],[123,2],[124,2],[125,2],[126,3],[127,3],[128,4],[129,5],[194,6],[195,5],[196,5],[197,4],[198,4],[199,5],[200,5],[201,6],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[57,8],[58,8],[59,8],[65,3],[66,3],[67,3],[68,3],[69,3],[70,3],[71,3],[72,3],[73,3],[74,3],[75,3],[76,3],[146,2],[147,2],[148,2],[149,2],[150,2],[151,2],[152,2],[153,2]],"ammo":[],"stars":[43,102,181],"startCol":4,"boss":null,"trees":[],"dec":[]},"8":{"hand":true,"name":"Snail Valley","cols":301,"rows":["...............................................................................................................................................................................................................h.............................................................................................","..............................................q..h..q........................................................................................................................................................................................................................................................",".............................................................................................................................................................................................................................................................................................................",".............................................................................................................................................................................................................................................................................................................","......................................................................................................................q.......h.......q......................................................................................................................................................................","..............................................................................................................................................................................................................#######........................................................................................","......................======..............############.....................................................................................................................................................#############.....................................................................................","........................................################...................................................................................................########.....................................###################..................................................................................","......................................####################...............................................................................................############................................#########################...............................................................................","############################################################............................######################################################.....##############################################################################......................######################################################","##############################################################################################################################################.....##########################################################################################################################################################","##############################################################################################################################################.....##########################################################################################################################################################","##############################################################################################################################################.....##########################################################################################################################################################","##############################################################################################################################################.....##########################################################################################################################################################"],"spikes":[],"walkers":[20,26,32,47,51,66,71,76,81,86,150,158,169,172,207,228,233,238,243,266],"flyers":[[48,3],[116,5],[122,4],[128,5],[134,4]],"springs":[],"coins":[[22,5],[23,5],[24,5],[25,5],[26,5],[27,5],[141,6],[142,5],[143,4],[144,4],[145,4],[146,5],[147,6],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[44,5],[45,5],[46,5],[47,5],[48,5],[49,5],[50,5],[51,5],[52,5],[53,5],[64,9],[66,9],[68,9],[70,9],[72,9],[74,9],[76,9],[78,9],[80,9],[82,9],[84,9],[86,9],[88,8],[90,8],[92,8],[94,8],[96,8],[98,8],[100,8],[102,8],[104,8],[106,8],[157,6],[158,6],[159,6],[160,6],[161,6],[162,6],[206,4],[207,4],[208,4],[209,4]],"ammo":[[10,8],[16,8],[46,5],[63,9],[74,9],[93,8],[114,8],[125,8],[136,8]],"stars":[98,183,257],"startCol":4,"boss":null,"trees":[],"dec":[]},"9":{"hand":true,"name":"Underground","cols":268,"rows":["..................#################....#####################.....................#########################################....................................................####################################..........................................................","..................#################....#####################.....................#########################################................h...................................####################################..........................................................","............................................................................................................................................................................................................................................................................","............................................................................................................................................................................................................................................................................","...........................................h...................................................................................................................................h............................................................................................","............................................................................................................................................................................................................................................................................","......................................................................................................................................##########............................................................................................................................","....................................................................................................................................##############..........................................................................................................................","..................................................................................................................................##################........................................................................................................................","####################################################################################....############################################################################################################################....####################################################","####################################################################################....############################################################################################################################....####################################################","####################################################################################....############################################################################################################################....####################################################","####################################################################################....############################################################################################################################....####################################################","####################################################################################....############################################################################################################################....####################################################"],"spikes":[{"c":24,"w":2,"v":1},{"c":29,"w":2,"v":2},{"c":52,"w":2,"v":1},{"c":99,"w":2,"v":2},{"c":105,"w":2,"v":1},{"c":116,"w":2,"v":2},{"c":183,"w":2,"v":1},{"c":191,"w":2,"v":2},{"c":199,"w":2,"v":1}],"walkers":[35,49,56,94,110,146,180,187,202,233],"flyers":[[113,5],[138,3],[192,5],[205,5]],"springs":[],"coins":[[22,5],[23,4],[24,4],[25,4],[26,5],[27,5],[28,4],[29,4],[30,4],[31,5],[50,5],[51,4],[52,4],[53,4],[54,5],[83,6],[84,6],[85,5],[86,5],[87,6],[88,6],[97,5],[98,4],[99,4],[100,4],[101,5],[103,5],[104,4],[105,4],[106,4],[107,5],[114,5],[115,4],[116,4],[117,4],[118,5],[181,5],[182,4],[183,4],[184,4],[185,5],[189,5],[190,4],[191,4],[192,4],[193,5],[197,5],[198,4],[199,4],[200,4],[201,5],[211,6],[212,6],[213,5],[214,5],[215,6],[216,6],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[19,8],[20,8],[21,8],[22,8],[23,8],[24,8],[25,8],[26,8],[27,8],[28,8],[29,8],[30,8],[31,8],[32,8],[136,5],[137,5],[138,5],[139,5],[140,5],[141,5],[142,5],[143,5]],"ammo":[[33,8],[92,8],[177,8]],"stars":[70,158,224],"startCol":4,"boss":null,"trees":[],"dec":[]},"10":{"hand":true,"name":"Tuca's Clearing","cols":240,"rows":["................................................................................................................................................................................................................................................",".................................................h............................q.................................................................................................................................................................","................................................................................................................................................................................................................................................","................................................................................................................................................................................................................................................","..............................................========.......................................................................................................h......................h...........................................................","...........................................................................................................................................................======.................=====.........................................................","..........................................................................########..............................................................=====..................=====....................................................................","........................................................................############.........==.................................................................................................................................................","......................................................................################...==.....................................................................................................................................................","##############################ccccc#####################################################.........##############################.......##########################################################################################################","##############################.....#####################################################.........##############################.......##########################################################################################################","##############################.....#####################################################.........##############################.......##########################################################################################################","##############################.....#####################################################.........##############################.......##########################################################################################################","##############################.....#####################################################.........##############################.......##########################################################################################################"],"spikes":[{"c":18,"w":2,"v":1},{"c":24,"w":2,"v":2}],"walkers":[28,38,101,176],"flyers":[[78,3]],"springs":[[44,8]],"coins":[[16,5],[17,4],[18,4],[19,4],[20,5],[22,5],[23,4],[24,4],[25,4],[26,5],[30,8],[31,8],[32,8],[33,8],[34,8],[46,3],[47,3],[48,3],[49,3],[50,3],[51,3],[52,3],[53,3],[88,6],[89,5],[90,4],[91,4],[92,4],[93,4],[94,4],[95,5],[96,6],[126,6],[127,6],[128,5],[129,4],[130,4],[131,4],[132,5],[133,5],[134,6],[5,8],[6,8],[7,8],[8,8],[9,8],[10,8],[11,8],[12,8],[76,5],[77,5],[78,5],[79,5],[80,5],[81,5],[144,4],[145,4],[146,4],[147,4],[148,4],[155,3],[156,3],[157,3],[158,3],[159,3],[160,3],[167,4],[168,4],[169,4],[170,4],[171,4]],"ammo":[[51,8],[115,8],[142,8],[152,8],[164,8],[175,8]],"stars":[56,113,194],"startCol":4,"boss":[170,5],"trees":[],"dec":[]}};
-
-function generateLevel(n, quietN) {
-  quietN = quietN || 0;
-  const worldIdx = Math.floor((n-1)/25);
-  const theme    = WORLD_THEMES[Math.min(worldIdx,3)];
-  const time     = WORLD_TIMES[Math.min(worldIdx,3)];
-  const diff     = ((n-1)%25)+1;
-  const rand     = rng(n*7919+31337);
-  const ri       = (a,b)=>a+Math.floor(rand()*(b-a+1));
-  const dl       = WORLD_DECOS[theme];
-  const ROWS=14, GND_TOP=G;
-
-  // أنواع الأعداء (تتنوع حسب الصعوبة)
-  const baseEt = WORLD_ENEMIES[theme], extra = WORLD_ENEMIES.extra[theme];
-  const walkers=[baseEt.walker], flyers=[baseEt.flyer];
-  if (diff>=6) for (const t of extra){ if(isFlyerType(t)){ if(!flyers.includes(t)) flyers.push(t); } else if(!walkers.includes(t)) walkers.push(t); }
-  const bossPool=[baseEt.boss].concat(extra.filter(t=>t!==baseEt.boss));
-  const pick = a=>a[Math.floor(rand()*a.length)];
-  const x = {
-    diff, rand, ri, theme, spk:0,
-    W:()=>pick(walkers), F:()=>pick(flyers),
-    B: diff<=15 ? baseEt.boss : bossPool[Math.floor(diff/8)%bossPool.length],
-  };
-
-  const TMX    = (typeof LEVEL_PLANS!=='undefined' && LEVEL_PLANS[n]) ? null : ((typeof TMX_LEVELS!=='undefined' && TMX_LEVELS[n]) ? TMX_LEVELS[n] : null);   // خطط LEVEL_PLANS (1–25) تتقدّم على المراحل اليدوية القديمة
-  const plan   = TMX ? {seq:['tmx'],arch:'tmx'} : planLevel(n,diff,worldIdx,theme,rand,ri,quietN);
-  const chunks = TMX ? [] : plan.seq.map(t=>(CHUNKS[t]||CHUNKS.open)(x));
-  const COLS   = TMX ? TMX.cols : 8 + chunks.reduce((s,c)=>s+c.w,0) + 26;   // ذيل أطول: مكان للعلم ثم القصر
-
-  const cells=[]; for(let r=0;r<ROWS;r++) cells[r]=new Int8Array(COLS);
-  for(let r=GND_TOP;r<ROWS;r++) for(let c=0;c<COLS;c++) cells[r][c]=CELL.GND;
-  const groundTop = new Array(COLS).fill(GND_TOP); // صف سطح الأرض لكل عمود (null = فجوة)
-
-  const platforms=[],enemies=[],coins=[],gaps=[],breakables=[],ammos=[],decos=[],spikeGroups=[];
-  const nearSpike = (wc,m) => spikeGroups.some(g=>wc>=g.c-(m||0) && wc<g.c+g.w+(m||0));
-  const inRange = wc => wc>0 && wc<COLS-1;
-  const hasBrk  = (c,r) => breakables.some(b=>b.c===c&&b.r===r);
-  const place = (v,wc,r,need) => {   // يضع نابضاً/شوكة فوق سطح صلب
-    if(!inRange(wc)||r<0||r>=ROWS-1) return false;
-    if(cells[r][wc]!==CELL.AIR) return false;
-    const below=cells[r+1][wc];
-    if(!need.includes(below)) return false;
-    cells[r][wc]=v; return true;
-  };
-
-  let off=8, ci=0;
-  const movers=[];
-  if (TMX){
-    // ── الأرض والمنصات وكتل الكسر ──
-    for (let r=0;r<ROWS;r++) for (let c=0;c<COLS;c++){
-      const ch=TMX.rows[r][c];
-      cells[r][c] = ch==='#'?CELL.GND : ch==='='?CELL.PLT : ch==='c'?CELL.CRUMBLE : CELL.AIR;
-      if (ch==='b'||ch==='q'||ch==='h') breakables.push({c,r,hasHeart:ch==='h',hasCoin:ch==='q'});
-    }
-    for (let c=0;c<COLS;c++){ groundTop[c]=null; let r=ROWS-1; if (cells[r][c]!==CELL.GND) continue; while (r>0&&cells[r-1][c]===CELL.GND) r--; groundTop[c]=r; }   // سطح الأرض المتصل بالقاعدة (يتجاهل الأسقف)
-    for (let c=0;c<COLS;){ if (groundTop[c]===null){ let d=c; while(d<COLS&&groundTop[d]===null) d++; gaps.push({c,len:d-c}); c=d; } else c++; }
-    const flatC = c => c>3&&c<COLS-24&&groundTop[c]!==null&&groundTop[c]>=2&&groundTop[c-1]===groundTop[c]&&groundTop[c+1]===groundTop[c]&&groundTop[c+2]===groundTop[c];
-    // ── الأشواك ──
-    for (const s of TMX.spikes){
-      let ok=true; for (let wc=s.c;wc<s.c+s.w;wc++) if (groundTop[wc]!==GND_TOP||cells[GND_TOP-1][wc]!==CELL.AIR) ok=false;
-      if (ok) spikeGroups.push({c:s.c,w:s.w,v:s.v});
-    }
-    // ── الأعداء ──
-    let lastW=-99;
-    for (const c0 of TMX.walkers){
-      if (c0-lastW<5) continue;
-      for (const d of [0,1,-1,2,-2,3,-3,4,-4]){ const wc=c0+d;
-        if (flatC(wc)&&!nearSpike(wc,2)){ enemies.push({type:x.W(),c:wc,r:groundTop[wc]-1,fly:false,dir:rand()<.5?1:-1}); lastW=c0; break; } }
-    }
-    for (const [c0,r0] of TMX.flyers) enemies.push({type:x.F(),c:c0,r:Math.max(2,r0),fly:true,dir:rand()<.5?1:-1});
-    if (TMX.boss) enemies.push({type:x.B,c:TMX.boss[0],r:TMX.boss[1],fly:true,dir:-1});
-    // ── عملات: أقواس فوق الحفر، وفوق المنصات، وخطوط على الأرض ──
-    const addCoin=(c,r)=>{ if(c>0&&c<COLS-1&&r>=0&&r<ROWS&&cells[r][c]===CELL.AIR&&!hasBrk(c,r)&&!coins.some(k=>k.c===c&&k.r===r)&&!(r>=G-2&&nearSpike(c,0))) coins.push({c,r}); };
-    if (TMX.hand){
-      for (const [c0,r0] of (TMX.coins||[])) addCoin(c0,r0);
-      for (const [c0,r0] of (TMX.springs||[])) place(CELL.SPRING,c0,r0,[CELL.GND,CELL.PLT]);
-      for (const [c0,r0] of (TMX.ammo||[])) if (cells[r0]&&cells[r0][c0]===CELL.AIR) ammos.push({c:c0,r:r0});
-    } else {
-    for (const g of gaps) if (g.len>=3) for (let i=0;i<g.len;i++) addCoin(g.c+i, GND_TOP-3-Math.round(Math.sin(Math.PI*(i+0.5)/g.len)*2));
-    for (let r=1;r<ROWS-1;r++) for (let c=0;c<COLS;){
-      if (cells[r][c]===CELL.PLT){ let d=c; while(d<COLS&&cells[r][d]===CELL.PLT) d++; if (d-c>=2&&c<COLS-30) for (let q=c;q<d;q++) addCoin(q,r-1); c=d; } else c++;
-    }
-    for (let c=7;c<COLS-40;c+=13) if (flatC(c)&&flatC(c+3)&&!nearSpike(c,3)) for (let q=0;q<4;q++) addCoin(c+q,groundTop[c+q]-1);
-    }
-    // ── ديكور: أشجار وشجيرات من الخريطة الأصلية ──
-    const treeImgs=['Tree_1.png','Tree_2.png','Tree_3.png'];
-    TMX.trees.forEach((c,i)=>{ if (groundTop[c]!==null&&groundTop[c]>=2&&cells[groundTop[c]-1][c]===CELL.AIR) decos.push({c,r:groundTop[c]-1,img:treeImgs[i%3]}); });
-    const decImg={55:'Bush__1_.png',73:'Bush__2_.png',91:'Mushroom_1.png',186:'Flower_1.png',187:'Flower_2.png'};
-    for (const [c,g] of TMX.dec){ if (!flatC(c)||decos.some(d=>Math.abs(d.c-c)<3)||cells[groundTop[c]-1][c]!==CELL.AIR) continue;
-      decos.push({c,r:groundTop[c]-1,img:decImg[g]||'Grass_1.png'}); }
-  }
-  for (const chunk of chunks){
-    const W=chunk.w;
-    const ctype=plan.seq[ci++];
-    // 1) فجوات
-    for (const g of chunk.ga){
-      const a=g.c, b=Math.min(g.c+g.len,W-1);
-      for (let gc=a;gc<b;gc++){ for(let r=GND_TOP;r<ROWS;r++) cells[r][off+gc]=CELL.AIR; groundTop[off+gc]=null; }
-      gaps.push({c:off+a,len:b-a});
-      // عبّارة متحركة تعبر الحفر العريضة (جسم جديد: float_platform)
-      if (ctype==='pit' && diff>=3 && b-a>=8) movers.push({c:off+a, len:3, span:b-a, r:G-1, speed:0.9+rand()*0.5, phase:rand()*6.28});
-    }
-    // 2) تلال/أعمدة (ارتفاع الأرض)
-    for (const h of chunk.hl){
-      for (let c=h.c;c<Math.min(h.c+h.len,W);c++){
-        const wc=off+c; if(groundTop[wc]===null) continue;
-        for (let r=GND_TOP-h.h;r<GND_TOP;r++) cells[r][wc]=CELL.GND;
-        groundTop[wc]=Math.min(groundTop[wc],GND_TOP-h.h);
-      }
-    }
-    // 3) بلاطات تنهار
-    for (const s of chunk.cr){ const wc=off+s.c; if(inRange(wc)){ cells[s.r][wc]=CELL.CRUMBLE; if(s.r===GND_TOP) groundTop[wc]=null; } }
-    // 4) منصات
-    for (const p of chunk.p){
-      for (let c=p.c;c<p.c+p.len;c++){ const wc=off+c; if(inRange(wc)&&cells[p.r][wc]===CELL.AIR) cells[p.r][wc]=CELL.PLT; }
-      platforms.push({c:off+p.c,r:p.r,len:p.len});
-    }
-    // 5) أشواك ونوابض
-    for (const s of chunk.sp){
-      // لا تُوضع الأشواك قرب الهوات/التلال: الإطار (الصورة) يجب أن يبقى كله فوق أرض مستوية
-      const c0=off+s.c; let ok=c0>14;
-      for (let wc=c0-2; ok && wc<=c0+s.w+1; wc++){
-        if (!inRange(wc)||groundTop[wc]!==GND_TOP||cells[GND_TOP][wc]!==CELL.GND||cells[GND_TOP-1][wc]!==CELL.AIR) ok=false;
-      }
-      if (ok && !nearSpike(c0,3) && !nearSpike(c0+s.w-1,3)) spikeGroups.push({c:c0,w:s.w,v:s.v});
-    }
-    for (const s of chunk.spr) place(CELL.SPRING, off+s.c, s.r, [CELL.GND,CELL.PLT]);
-    // 6) كتل الكسر
-    for (const b of chunk.br){
-      const wc=off+b.c;
-      if (b.r<0||!inRange(wc)||cells[b.r][wc]!==CELL.AIR||hasBrk(wc,b.r)) continue;
-      const hasCoin = !b.hasHeart && rand()<0.40;
-      breakables.push({c:wc,r:b.r,hasHeart:b.hasHeart,hasCoin});
-    }
-    // 7) عملات (في الهواء فقط وليس داخل كتلة)
-    for (const co of chunk.co){
-      const wc=off+co.c;
-      if (inRange(wc)&&co.r>=0&&cells[co.r]&&cells[co.r][wc]===CELL.AIR&&!hasBrk(wc,co.r)&&!(co.r>=G-2&&nearSpike(wc,0))) coins.push({c:wc,r:co.r});
-    }
-    // 8) ذخيرة خاصة بالقطعة
-    for (const a of chunk.am){ const wc=off+a.c; if(inRange(wc)&&cells[a.r][wc]===CELL.AIR&&!nearSpike(wc,2)) ammos.push({c:wc,r:a.r}); }
-    // 9) الأعداء — الأرضيون يوضعون على سطح مستوٍ فعلي
-    const flat = c => groundTop[c]!==null && groundTop[c-1]===groundTop[c] && groundTop[c+1]===groundTop[c] && groundTop[c+2]===groundTop[c];
-    for (const e of chunk.en){
-      const flyer = isFlyerType(e.type);
-      if (flyer && e.fly){ enemies.push({...e,c:off+e.c}); continue; }
-      let placed=false;
-      for (const d of [0,1,-1,2,-2,3,-3,4,-4]){
-        const wc=off+e.c+d;
-        if (wc>3 && wc<COLS-24 && flat(wc) && !nearSpike(wc,2)){ enemies.push({type:e.type,c:wc,r:groundTop[wc]-1,fly:false,dir:e.dir}); placed=true; break; }
-      }
-    }
-    off+=W;
-  }
-
-  // ═══════ المناطق السرية: غرفة مخفية داخل جدار هضبة (3 نجوم لكل مرحلة) ═══════
-  // هضبة بارتفاع 5 بلاطات: درج على جهة، وعلى الجهة الأخرى جدار ترابي "مزيّف" تدخل منه إلى غرفة فيها نجمة
-  const secrets=[], items=[];
-  const inZone = wc => secrets.some(z=>wc>=z.c0-1&&wc<z.c0+16+1);
-  const regionFree=(a,w)=>{
-    const b=a+w-1;
-    if (a<12||b>COLS-34) return false;
-    if (secrets.some(z=>a<z.c0+16+4&&b>z.c0-4)) return false;
-    for (let c=a-1;c<=b+1;c++){
-      if (groundTop[c]!==GND_TOP||cells[GND_TOP][c]!==CELL.GND) return false;
-      for (let r=0;r<GND_TOP;r++) if (cells[r][c]!==CELL.AIR) return false;
-      if (nearSpike(c,2)) return false;
-    }
-    if (breakables.some(k=>k.c>=a-1&&k.c<=b+1)) return false;
-    return true;
-  };
-  const addChamber=(a,dir)=>{
-    const id=secrets.length, p0=a+1;
-    const colOf=j=>dir>0?p0+j:p0+13-j;                 // j = موضع من جهة الدرج
-    for (let j=0;j<14;j++){
-      const h=j<2?2:(j<4?4:5), col=colOf(j);
-      for (let r=G-h;r<G;r++) cells[r][col]=CELL.GND;
-      groundTop[col]=G-h;
-    }
-    for (let j=6;j<14;j++) for (let r=G-4;r<G;r++) cells[r][colOf(j)]=CELL.AIR;   // الغرفة + الممر المزيّف
-    // تنظيف العملات والأعداء من منطقة الهضبة
-    const lo=p0-7, hi=p0+13+7;
-    for (let q=coins.length-1;q>=0;q--) if (coins[q].c>=p0&&coins[q].c<=p0+13&&coins[q].r>=G-5) coins.splice(q,1);
-    for (let q=enemies.length-1;q>=0;q--) if (enemies[q].c>=lo&&enemies[q].c<=hi) enemies.splice(q,1);
-    const c6=colOf(6), c13=colOf(13);
-    secrets.push({id,kind:'chamber',dir,c0:a,c:Math.min(c6,c13),r:G-4,w:8,h:4,starC:colOf(8),starR:G-2});
-    coins.push({c:colOf(7),r:G-2},{c:colOf(9),r:G-2},{c:colOf(11),r:G-2});
-    items.push({type:'gem',c:colOf(10),r:G-2});
-  };
-  {
-    const lo=12, hi=COLS-34, seg=(hi-lo)/3;
-    if (TMX){
-      for (let k=0;k<3;k++){
-        const dir=1, tgt=((TMX.stars&&TMX.stars[k]!=null)?TMX.stars[k]:[56,116,166][k])-8;
-        const cand=[]; for (let a=lo;a<hi-16;a++) cand.push(a);
-        cand.sort((p,q)=>Math.abs(p-tgt)-Math.abs(q-tgt));
-        for (const a of cand) if (regionFree(a,16)){ addChamber(a,dir); break; }
-      }
-    } else
-    for (let k=0;k<3;k++){
-      const dir=1; let done=false;
-      for (let pass=0;pass<2&&!done;pass++){
-        const s0=pass===0?Math.floor(lo+seg*k):lo, s1=pass===0?Math.floor(lo+seg*(k+1)):hi;
-        const start=s0+ri(0,4);
-        for (let a=start;a<s1-16&&!done;a++) if (regionFree(a,16)){ addChamber(a,dir); done=true; }
-        for (let a=s0;a<start&&a<s1-16&&!done;a++) if (regionFree(a,16)){ addChamber(a,dir); done=true; }
-      }
-    }
-  }
-
-  // ضمان 3 قلوب بالضبط: أضف كتلاً احتياطية إن قلّت
-  const flatAt = c => c>3&&c<COLS-24&&groundTop[c]!==null&&groundTop[c]>=2&&groundTop[c-1]===groundTop[c]&&groundTop[c+1]===groundTop[c];
-  for (let c=14;c<COLS-30 && breakables.length<6 && !(TMX&&TMX.hand);c+=11){
-    for (const d of [0,1,2,3]){
-      const wc=c+d; if(!flatAt(wc)) continue;
-      const r=groundTop[wc]-5;
-      if (r>=0&&cells[r][wc]===CELL.AIR&&!hasBrk(wc,r)&&!inZone(wc)){ breakables.push({c:wc,r,hasHeart:false,hasCoin:rand()<0.4}); break; }
-    }
-  }
-  const heartCount = breakables.filter(b=>b.hasHeart).length;
-  if (heartCount<3){
-    const cand=breakables.filter(b=>!b.hasHeart);
-    let toAdd=3-heartCount; const step=Math.max(1,Math.floor(cand.length/(toAdd+1)));
-    for (let i=0;i<cand.length&&toAdd>0;i+=step){ cand[i].hasHeart=true; cand[i].hasCoin=false; toAdd--; }
-    for (let i=0;i<cand.length&&toAdd>0;i++){ if(!cand[i].hasHeart){ cand[i].hasHeart=true; cand[i].hasCoin=false; toAdd--; } }
-  } else if (heartCount>3){
-    let kept=0; for (const b of breakables) if(b.hasHeart){ if(kept<3) kept++; else b.hasHeart=false; }
-  }
-
-  // عناصر قوة داخل الكتل: درع + مغناطيس (من الصعوبة 2 فما فوق)
-  if (diff>=2){
-    const plain=breakables.filter(b=>!b.hasHeart);
-    const want=['shield','magnet'];
-    for (let i=0;i<want.length&&plain.length>0;i++){
-      const b=plain.splice(Math.floor(rand()*plain.length),1)[0];
-      b.hasItem=want[i]; b.hasCoin=false;
-    }
-  }
-
-  // ذخيرة منتظمة (على سطح الأرض الفعلي)
-  for (let c=18;c<COLS-30;c+=40){
-    if (flatAt(c)&&!nearSpike(c,2)&&cells[groundTop[c]-1][c]===CELL.AIR&&!ammos.some(a=>Math.abs(a.c-c)<12))
-      ammos.push({c,r:groundTop[c]-1});
-  }
-
-  // ديكور على الأرض المستوية فقط
-  for (let c=3;c<COLS-24;c+=3){
-    if (rand()<0.25) continue;
-    const gt=groundTop[c];
-    if (gt===null||gt<2||groundTop[c-1]!==gt||groundTop[c+1]!==gt) continue;
-    if (cells[gt-1][c]!==CELL.AIR) continue;
-    if (decos.some(d=>Math.abs(d.c-c)<3)) continue;
-    decos.push({c,r:gt-1,img:dl[Math.floor(rand()*dl.length)]});
-  }
-
-  if (secrets.length<3 && quietN<3) return generateLevel(n, quietN+1);
-  return {
-    world:worldIdx+1, theme, time,
-    cols:COLS, rows:ROWS, gndRow:GND_TOP,
-    cells, platforms, breakables, coins, gaps, enemies, ammos, decos,
-    spikeGroups, spikes:[], springs:[], traps:[],
-    secrets, items, movers,
-    goal:{c:COLS-21,r:GND_TOP-1},
-    castle:{c:COLS-9},
-    startCol:TMX?TMX.startCol:1, startRow:(TMX&&groundTop[TMX.startCol]!=null)?groundTop[TMX.startCol]-1:GND_TOP-1,
-    tileSet:TILE_VARIANTS[theme],
-    diff, arch:plan.arch, seq:plan.seq,
-  };
-}
-
-const LEVELS={};
-for(let i=1;i<=100;i++) LEVELS[i]=generateLevel(i);
+  // Nature الجديدة
+  low_arc:ch_low_arc, double_gap:ch_double_gap, stair_tower:ch_stair_tower,
+  stairs_up:ch_stairs_up, zig_zig:ch_zig_zig, tunnel:ch_tunnel, wall_shoot:ch_wall_shoot,
+  spring_chain:ch_spring_chain, spike_field:ch_spike_field, oasis:ch_oasis, pre_finale:ch_pre_finale,
+  // Graveyard الجديدة
+  grave_bones:ch_grave_bones, grave_crypt:ch_grave_crypt, grave_tomb_pit:ch_grave_tomb_pit,
+  grave_bat_corridor:ch_grave_bat_corridor, grave_catacomb:ch_grave_catacomb, grave_crumble_bats:ch_grave_crum
