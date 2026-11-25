@@ -617,7 +617,7 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
-const BUILD_ID = 'tmx-v10';
+const BUILD_ID = 'tmx-v11';
 
 // ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
 function _ensureLoginUI() {
@@ -1148,7 +1148,7 @@ function buildWorld(ld) {
   // ── منصات متحركة ──
   movers = (ld.movers || []).map(m => {
     const x0 = m.c * TS, x1 = (m.c + m.span - m.len) * TS;
-    const t = { x:x0, y:m.r*TS, w:m.len*TS, h:TS, type:T.PLT, mover:true, row:m.r, col:m.c, x0, x1, ph:m.phase, sp:m.speed*0.025, dx:0 };
+    const t = { x:x0 + (x1 - x0) * (0.5 - 0.5 * Math.cos(m.phase)), y:m.r*TS, w:m.len*TS, h:TS, type:T.PLT, mover:true, row:m.r, col:m.c, x0, x1, ph:m.phase, sp:m.speed*0.025, dx:0 };
     solidTiles.push(t);
     return t;
   });
