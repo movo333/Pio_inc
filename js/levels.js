@@ -536,59 +536,104 @@ function generateLevel(n, quietN) {
     off+=W;
   }
 
-  // ═══════ المناطق السرية: غرفة مخفية داخل جدار هضبة (3 نجوم لكل مرحلة) ═══════
-  // هضبة بارتفاع 5 بلاطات: درج على جهة، وعلى الجهة الأخرى جدار ترابي "مزيّف" تدخل منه إلى غرفة فيها نجمة
+  // ═══════ المناطق السرية (3 نجوم لكل مرحلة) ═══════
+  //  النجمة 1 (pit)  : حفرة بعمق بلاطتين مموّهة بتراب؛ عند السقوط فيها تنفتح غرفة سرية (نجمة + عملات منتظمة)
+  //  النجمة 2 (sky)  : القفز على منصة معيّنة يُظهر منصة النجمة في الأعلى
+  //  النجمة 3 (trap) : منصة طويلة فوق أشواك؛ تحتها باب سري قرب الأشواك يُفتح عند العودة (لا عند الدخول)
+  // الألماسة صارت داخل طوب قابل للكسر قرب كل سرّ.
   const secrets=[], items=[];
-  const inZone = wc => secrets.some(z=>wc>=z.c0-1&&wc<z.c0+16+1);
-  const regionFree=(a,w)=>{
-    const b=a+w-1;
-    if (a<12||b>COLS-34) return false;
-    if (secrets.some(z=>a<z.c0+16+4&&b>z.c0-4)) return false;
-    for (let c=a-1;c<=b+1;c++){
-      if (groundTop[c]!==GND_TOP||cells[GND_TOP][c]!==CELL.GND) return false;
-      for (let r=0;r<GND_TOP;r++) if (cells[r][c]!==CELL.AIR) return false;
-      if (nearSpike(c,2)) return false;
-    }
-    if (breakables.some(k=>k.c>=a-1&&k.c<=b+1)) return false;
+  const inZone = wc => secrets.some(z=>wc>=z.c0-1&&wc<z.c0+z.span+1);
+  const colFlat = c => inRange(c) && groundTop[c]===GND_TOP && cells[GND_TOP][c]===CELL.GND && cells[GND_TOP+1][c]===CELL.GND && cells[GND_TOP+2][c]===CELL.GND;
+  const airCol  = (c,r0,r1)=>{ for (let r=r0;r<=r1;r++) if (r>=0 && (cells[r][c]!==CELL.AIR || hasBrk(c,r))) return false; return true; };
+  const clash   = (a,b)=> secrets.some(z=>a<z.c0+z.span+6 && b>z.c0-6);
+  const clearZone = (a,b,rMin)=>{
+    for (let q=coins.length-1;q>=0;q--) if (coins[q].c>=a&&coins[q].c<=b&&coins[q].r>=rMin) coins.splice(q,1);
+    for (let q=enemies.length-1;q>=0;q--) if (enemies[q].c>=a-7&&enemies[q].c<=b+7) enemies.splice(q,1);
+    for (let q=ammos.length-1;q>=0;q--) if (ammos[q].c>=a-1&&ammos[q].c<=b+1) ammos.splice(q,1);
+    for (let q=decos.length-1;q>=0;q--) if (decos[q].c>=a-2&&decos[q].c<=b+2) decos.splice(q,1);
+  };
+  const gemBrick = (cols,r)=>{ for (const c of cols) if (r>=0 && inRange(c) && cells[r][c]===CELL.AIR && !hasBrk(c,r)) { breakables.push({c,r,hasHeart:false,hasCoin:false,hasItem:'gem',gem:true}); return true; } return false; };
+  // عملات الغرفة بترتيب منتظم: صف سفلي + صف علوي والنجمة في وسط الصف السفلي
+  const roomCoins = (c0,w,starC)=>{ const out=[]; for (let j=1;j<w-1;j++){ out.push({c:c0+j,r:G}); if (c0+j!==starC) out.push({c:c0+j,r:G+1}); } return out; };
+
+  // 1) حفرة (7 بلاطات عرضاً) — الأرض حولها مستوية
+  const tryPit = a=>{
+    const w=7, b=a+w-1;
+    if (a<12||b>COLS-34||clash(a,b)) return false;
+    for (let c=a-2;c<=b+2;c++){ if (!colFlat(c)||nearSpike(c,3)||cells[GND_TOP-1][c]!==CELL.AIR) return false; }
+    const sC=a+3;
+    clearZone(a-1,b+1,GND_TOP-3);
+    for (let c=a;c<=b;c++){ cells[GND_TOP][c]=CELL.AIR; cells[GND_TOP+1][c]=CELL.AIR; groundTop[c]=null; }
+    secrets.push({id:0,kind:'pit',dir:0,c0:a,span:w,c:a,r:GND_TOP,w,h:3,starC:sC,starR:GND_TOP+1,coins:roomCoins(a,w,sC)});
+    gemBrick([sC,sC-1,sC+1,sC-2,sC+2],GND_TOP-5);
     return true;
   };
-  const addChamber=(a,dir)=>{
-    const id=secrets.length, p0=a+1;
-    const colOf=j=>dir>0?p0+j:p0+13-j;                 // j = موضع من جهة الدرج
-    for (let j=0;j<14;j++){
-      const h=j<2?2:(j<4?4:5), col=colOf(j);
-      for (let r=G-h;r<G;r++) cells[r][col]=CELL.GND;
-      groundTop[col]=G-h;
+  // 2) منصة تُظهر منصة النجمة فوقها
+  const trySky = a=>{
+    // نبحث عن منصة موجودة (3 بلاطات فأكثر) تبدأ قرب العمود a
+    for (const r of [GND_TOP-3,GND_TOP-4,GND_TOP-5]){
+      for (let c0=a;c0<a+6;c0++){
+        if (!inRange(c0)||cells[r][c0]!==CELL.PLT||cells[r][c0-1]===CELL.PLT) continue;
+        let c1=c0; while (inRange(c1+1)&&cells[r][c1+1]===CELL.PLT) c1++;
+        if (c1-c0<2||c0<12||c1>COLS-34) continue;
+        const sr=Math.max(2,r-3), pc=c1-1, len=4;
+        if (pc+len>COLS-30||clash(c0,pc+len)) continue;
+        let ok=true;
+        for (let c=pc;c<pc+len&&ok;c++) if (!airCol(c,sr-1,r-1)) ok=false;
+        if (!ok) continue;
+        for (let q=coins.length-1;q>=0;q--) if (coins[q].c>=pc&&coins[q].c<pc+len&&coins[q].r>=sr-1&&coins[q].r<r) coins.splice(q,1);
+        secrets.push({id:1,kind:'sky',dir:0,c0:c0,span:pc+len-c0,c:pc,r:sr,w:len,h:1,trig:{c0,c1,r},plat:{c:pc,len,r:sr},starC:pc+1,starR:sr-1,coins:[]});
+        gemBrick([c0+1,c0],r-5);
+        return true;
+      }
     }
-    for (let j=6;j<14;j++) for (let r=G-4;r<G;r++) cells[r][colOf(j)]=CELL.AIR;   // الغرفة + الممر المزيّف
-    // تنظيف العملات والأعداء من منطقة الهضبة
-    const lo=p0-7, hi=p0+13+7;
-    for (let q=coins.length-1;q>=0;q--) if (coins[q].c>=p0&&coins[q].c<=p0+13&&coins[q].r>=G-5) coins.splice(q,1);
-    for (let q=enemies.length-1;q>=0;q--) if (enemies[q].c>=lo&&enemies[q].c<=hi) enemies.splice(q,1);
-    const c6=colOf(6), c13=colOf(13);
-    secrets.push({id,kind:'chamber',dir,c0:a,c:Math.min(c6,c13),r:G-4,w:8,h:4,starC:colOf(8),starR:G-2});
-    coins.push({c:colOf(7),r:G-2},{c:colOf(9),r:G-2},{c:colOf(11),r:G-2});
-    items.push({type:'gem',c:colOf(10),r:G-2});
+    return false;
   };
+  // 2-ب) احتياطي: إن لم توجد منصة مناسبة نبني منصة تشغيل جديدة على أرض مستوية
+  const trySkyNew = a=>{
+    const c0=a+1, len=5, c1=c0+len-1, r=GND_TOP-3, sr=GND_TOP-6, pc=c1-1, b=pc+4;
+    if (a<12||b>COLS-34||clash(a,b+1)) return false;
+    for (let c=a-1;c<=b+1;c++){ if (!colFlat(c)||nearSpike(c,2)||!airCol(c,0,GND_TOP-1)) return false; }
+    clearZone(a-1,b+1,GND_TOP-7);
+    for (let c=c0;c<=c1;c++) cells[r][c]=CELL.PLT;
+    platforms.push({c:c0,r,len});
+    for (let c=c0;c<=c1;c++) coins.push({c,r:r-1});
+    secrets.push({id:1,kind:'sky',dir:0,c0,span:b+1-c0,c:pc,r:sr,w:4,h:1,trig:{c0,c1,r},plat:{c:pc,len:4,r:sr},starC:pc+1,starR:sr-1,coins:[]});
+    gemBrick([c0+1,c0],GND_TOP-8);
+    return true;
+  };
+  // 3) منصة طويلة + أشواك تحتها + باب سري (5 بلاطات) قرب الأشواك
+  const tryTrap = a=>{
+    const pc=a+2, pw=14, b=pc+pw;
+    if (a<12||b>COLS-34||clash(a,b)) return false;
+    for (let c=a-1;c<=b+1;c++){ if (!colFlat(c)||nearSpike(c,2)||!airCol(c,0,GND_TOP-1)) return false; }
+    clearZone(a-1,b+1,GND_TOP-6);
+    for (let c=pc;c<pc+pw;c++) cells[GND_TOP-3][c]=CELL.PLT;
+    platforms.push({c:pc,r:GND_TOP-3,len:pw});
+    spikeGroups.push({c:pc+8,w:3,v:1});
+    for (let c=pc+1;c<pc+pw-1;c++) coins.push({c,r:GND_TOP-4});
+    const tc=pc+2, tw=5, sC=tc+2;
+    secrets.push({id:2,kind:'trap',dir:0,c0:pc,span:pw,c:tc,r:GND_TOP,w:tw,h:2,armC:pc+8,starC:sC,starR:GND_TOP+1,coins:roomCoins(tc,tw,sC)});
+    gemBrick([pc+6,pc+7,pc+5],GND_TOP-8);
+    return true;
+  };
+
   {
     const lo=12, hi=COLS-34, seg=(hi-lo)/3;
-    if (TMX){
-      for (let k=0;k<3;k++){
-        const dir=1, tgt=((TMX.stars&&TMX.stars[k]!=null)?TMX.stars[k]:[56,116,166][k])-8;
-        const cand=[]; for (let a=lo;a<hi-16;a++) cand.push(a);
-        cand.sort((p,q)=>Math.abs(p-tgt)-Math.abs(q-tgt));
-        for (const a of cand) if (regionFree(a,16)){ addChamber(a,dir); break; }
-      }
-    } else
-    for (let k=0;k<3;k++){
-      const dir=1; let done=false;
-      for (let pass=0;pass<2&&!done;pass++){
-        const s0=pass===0?Math.floor(lo+seg*k):lo, s1=pass===0?Math.floor(lo+seg*(k+1)):hi;
-        const start=s0+ri(0,4);
-        for (let a=start;a<s1-16&&!done;a++) if (regionFree(a,16)){ addChamber(a,dir); done=true; }
-        for (let a=s0;a<start&&a<s1-16&&!done;a++) if (regionFree(a,16)){ addChamber(a,dir); done=true; }
-      }
+    const order=[0,1,2]; for (let i=2;i>0;i--){ const j=Math.floor(rand()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+    const kinds=[{k:2,fn:tryTrap},{k:0,fn:tryPit},{k:1,fn:trySky}];   // الأصعب مكاناً أولاً
+    for (const {k,fn} of kinds){
+      const tgt = (TMX && TMX.stars && TMX.stars[k]!=null) ? TMX.stars[k]-6 : Math.floor(lo+seg*(order[k]+0.3));
+      const cand=[]; for (let a=lo;a<hi;a++) cand.push(a);
+      cand.sort((p,q)=>Math.abs(p-tgt)-Math.abs(q-tgt));
+      for (const a of cand) if (fn(a)) break;
     }
+    if (!secrets.some(z=>z.kind==='sky')){
+      const cand=[]; for (let a=lo;a<hi;a++) cand.push(a);
+      for (const a of cand) if (trySkyNew(a)) break;
+    }
+    secrets.sort((p,q)=>p.id-q.id);
+    secrets.forEach((z,i)=>{ z.id=i; });
   }
 
   // ضمان 3 قلوب بالضبط: أضف كتلاً احتياطية إن قلّت
@@ -602,7 +647,7 @@ function generateLevel(n, quietN) {
   }
   const heartCount = breakables.filter(b=>b.hasHeart).length;
   if (heartCount<3){
-    const cand=breakables.filter(b=>!b.hasHeart);
+    const cand=breakables.filter(b=>!b.hasHeart&&!b.gem);
     let toAdd=3-heartCount; const step=Math.max(1,Math.floor(cand.length/(toAdd+1)));
     for (let i=0;i<cand.length&&toAdd>0;i+=step){ cand[i].hasHeart=true; cand[i].hasCoin=false; toAdd--; }
     for (let i=0;i<cand.length&&toAdd>0;i++){ if(!cand[i].hasHeart){ cand[i].hasHeart=true; cand[i].hasCoin=false; toAdd--; } }
@@ -612,7 +657,7 @@ function generateLevel(n, quietN) {
 
   // عناصر قوة داخل الكتل: درع + مغناطيس (من الصعوبة 2 فما فوق)
   if (diff>=2){
-    const plain=breakables.filter(b=>!b.hasHeart);
+    const plain=breakables.filter(b=>!b.hasHeart&&!b.gem);
     const want=['shield','magnet'];
     for (let i=0;i<want.length&&plain.length>0;i++){
       const b=plain.splice(Math.floor(rand()*plain.length),1)[0];
@@ -622,7 +667,7 @@ function generateLevel(n, quietN) {
 
   // ذخيرة منتظمة (على سطح الأرض الفعلي)
   for (let c=18;c<COLS-30;c+=40){
-    if (flatAt(c)&&!nearSpike(c,2)&&cells[groundTop[c]-1][c]===CELL.AIR&&!ammos.some(a=>Math.abs(a.c-c)<12))
+    if (flatAt(c)&&!inZone(c)&&!nearSpike(c,2)&&cells[groundTop[c]-1][c]===CELL.AIR&&!ammos.some(a=>Math.abs(a.c-c)<12))
       ammos.push({c,r:groundTop[c]-1});
   }
 
@@ -632,7 +677,7 @@ function generateLevel(n, quietN) {
     const gt=groundTop[c];
     if (gt===null||gt<2||groundTop[c-1]!==gt||groundTop[c+1]!==gt) continue;
     if (cells[gt-1][c]!==CELL.AIR) continue;
-    if (decos.some(d=>Math.abs(d.c-c)<3)) continue;
+    if (decos.some(d=>Math.abs(d.c-c)<3)||inZone(c)) continue;
     decos.push({c,r:gt-1,img:dl[Math.floor(rand()*dl.length)]});
   }
 

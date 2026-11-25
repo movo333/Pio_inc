@@ -1051,6 +1051,12 @@ function startLevel(n) {
 function buildWorld(ld) {
   const { cells, gndRow, cols, rows, breakables, decos, enemies: enDefs, ammos, goal } = ld;
 
+  // إرجاع خلايا الأسرار لحالتها الأصلية (قد تكون تغيّرت في محاولة سابقة لنفس المرحلة)
+  for (const z of (ld.secrets || [])) {
+    if (z.kind === 'sky')  for (let c = z.plat.c; c < z.plat.c + z.plat.len; c++) cells[z.plat.r][c] = T.AIR;
+    if (z.kind === 'trap') for (let r = gndRow; r < gndRow + 2; r++) for (let c = z.c; c < z.c + z.w; c++) cells[r][c] = T.GND;
+  }
+
   // Build solid tile objects from cells array
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
@@ -1139,9 +1145,14 @@ function buildWorld(ld) {
   // ── المناطق السرية + النجوم ──
   secrets = [];
   (ld.secrets || []).forEach((z, i) => {
-    secrets.push({ id:i, kind:z.kind, dir:z.dir, x:z.c*TS, y:z.r*TS, w:z.w*TS, h:z.h*TS, revealed:false, a:1, cv:null,
+    // pit: غطاء ترابي يخفي الحفرة | sky/trap: لا غطاء (a=0) — تُكشف بالقفز على المنصة / بالعودة نحو الباب
+    secrets.push({ id:i, kind:z.kind, dir:z.dir || 0, x:z.c*TS, y:z.r*TS, w:z.w*TS, h:z.h*TS, revealed:false,
+                   a: z.kind === 'pit' ? 1 : 0, cv:null, armed:false, d:z,
                    seed:(z.c * 131 + i * 977 + ld.cols) >>> 0, theme:ld.theme });
     pickups.push({ x:z.starC*TS + 2, y:z.starR*TS + 2, w:28, h:28, type:'star', zone:i, done:false });
+    // عملات الغرفة (مخفية حتى تنكشف الغرفة)
+    const cs = Math.round(TS * 0.7), off = Math.round((TS - cs) / 2);
+    for (const co of (z.coins || [])) pickups.push({ x:co.c*TS + off, y:co.r*TS + off, w:cs, h:cs, type:'coin', zone:i, done:false });
   });
   // ── عناصر (جواهر ...) ──
   for (const it of (ld.items || [])) pickups.push({ x:it.c*TS + 4, y:it.r*TS + 4, w:24, h:24, type:it.type, done:false });
@@ -1484,6 +1495,7 @@ function checkPickups() {
     const mx = player.x + player.w / 2, my = player.y + player.h / 2;
     for (const p of pickups) {
       if (p.done || p.type !== 'coin') continue;
+      if (p.zone !== undefined && !(secrets[p.zone] && secrets[p.zone].revealed)) continue;
       const dx = mx - (p.x + p.w / 2), dy = my - (p.y + p.h / 2), d = Math.hypot(dx, dy);
       if (d < 190 && d > 1) { p.x += dx / d * 7; p.y += dy / d * 7; }
     }
@@ -1491,6 +1503,7 @@ function checkPickups() {
 
   for (const p of pickups) {
     if (p.done) continue;
+    if (p.zone !== undefined && !(secrets[p.zone] && secrets[p.zone].revealed)) continue;   // عناصر الغرفة السرية مخفية حتى تنكشف
     if (!overlaps(player, p, 6)) continue;
 
     if (p.type === 'coin') {
@@ -1797,6 +1810,7 @@ function render() {
   ctx.save();
   ctx.translate(-camera.x, -camera.y);
   drawDecos();
+  drawRoomBacks();
   drawTiles();
   drawMovers();
   drawPickups();
@@ -2059,6 +2073,7 @@ function drawPickups() {
   for (const p of pickups) {
     if (p.done) continue;
     if (p.x - camera.x > W || p.x + p.w - camera.x < 0) continue;
+    if (p.zone !== undefined && !(secrets[p.zone] && secrets[p.zone].revealed)) continue;   // مخفي حتى تنكشف الغرفة
 
     const px = p.x, py = p.y;
 
@@ -2133,7 +2148,6 @@ function drawPickups() {
         }
       }
     } else if (p.type === 'star' || p.type === 'gem' || p.type === 'magnet' || p.type === 'shield') {
-      if (p.type === 'star' && !(secrets[p.zone] && secrets[p.zone].revealed)) continue;
       drawItemPick(p);
     } else if (p.type === 'spring') {
       drawSpring(p);
@@ -2454,18 +2468,62 @@ function updMovers(dt) {
   }
 }
 
+function revealSecret(z, msg) {
+  z.revealed = true;
+  SFX.synth('secret');
+  addPopup(player.x + player.w / 2, player.y - 24, msg || 'SECRET AREA!', '#FFE082');
+  const cx = z.x + z.w / 2, cy = z.y + z.h / 2;
+  for (let i = 0; i < 14; i++) sparkle(z.x + Math.random() * z.w, z.y + Math.random() * z.h, '#FFF59D', 1);
+  sparkle(cx, cy, '#FFEB3B', 12);
+}
+
+// النجمة 2: منصة النجمة تظهر في الأعلى عند الهبوط على المنصة المحددة
+function revealSkyPlatform(z) {
+  const ld = LEVELS[GS.curLevel], p = z.d.plat;
+  for (let c = p.c; c < p.c + p.len; c++) {
+    ld.cells[p.r][c] = T.PLT;
+    solidTiles.push({ x:c * TS, y:p.r * TS, w:TS, h:TS, type:T.PLT, row:p.r, col:c });
+    sparkle(c * TS + TS / 2, p.r * TS + 8, '#FFF59D', 6);
+  }
+  revealSecret(z, 'STAR PLATFORM!');
+}
+
+// النجمة 3: الباب السري تحت المنصة يُفتح (بلاطتان عمقاً) ويسقط اللاعب في الغرفة
+function openTrapDoor(z) {
+  const ld = LEVELS[GS.curLevel], g = ld.gndRow, d = z.d;
+  for (let i = solidTiles.length - 1; i >= 0; i--) {
+    const t = solidTiles[i];
+    if (t.type === T.GND && !t.isBreakable && t.row >= g && t.row < g + 2 && t.col >= d.c && t.col < d.c + d.w) {
+      spawnBreakParticles(t.x + TS / 2, t.y + TS / 2, ld.theme);
+      solidTiles.splice(i, 1);
+    }
+  }
+  for (let r = g; r < g + 2; r++) for (let c = d.c; c < d.c + d.w; c++) ld.cells[r][c] = T.AIR;
+  player.onGnd = false;
+  SFX.play('break');
+  revealSecret(z, 'SECRET DOOR!');
+}
+
 function updSecrets(dt) {
   if (player.dead) return;
-  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+  const ld = LEVELS[GS.curLevel];
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2, feet = player.y + player.h;
   for (const z of secrets) {
-    if (!z.revealed) {
-      if (cx > z.x && cx < z.x + z.w && cy > z.y && cy < z.y + z.h - (z.kind === 'chamber' ? 0 : 45)) {
-        z.revealed = true;
-        SFX.synth('secret');
-        addPopup(cx, player.y - 24, 'SECRET AREA!', '#FFE082');
-        for (let i = 0; i < 14; i++) sparkle(z.x + Math.random() * z.w, z.y + Math.random() * z.h, '#FFF59D', 1);
-      }
-    } else if (z.a > 0) z.a = Math.max(0, z.a - dt / 30);
+    if (z.revealed) { if (z.a > 0) z.a = Math.max(0, z.a - dt / 30); continue; }
+    if (z.kind === 'pit') {
+      // السقوط داخل الحفرة يكشف الغرفة (لا يكفي الوقوف على حافتها)
+      if (cx > z.x + 6 && cx < z.x + z.w - 6 && cy > z.y + 10) revealSecret(z);
+    } else if (z.kind === 'sky') {
+      const t = z.d.trig;
+      if (player.onGnd && Math.abs(feet - t.r * TS) < 3 && cx > t.c0 * TS && cx < (t.c1 + 1) * TS) revealSkyPlatform(z);
+    } else if (z.kind === 'trap') {
+      const onFloor = player.onGnd && Math.abs(feet - ld.gndRow * TS) < 3;
+      // التسليح: اقتراب اللاعب من الأشواك (من تحت المنصة)
+      if (!z.armed && onFloor && cx >= z.d.armC * TS - 64) z.armed = true;
+      // الفتح: عند العودة (حركة لليسار) فوق الباب بعد التسليح — وليس عند الدخول
+      const goingBack = (keys.left && !keys.right) || player.vx < -0.5;
+      if (z.armed && onFloor && goingBack && cx > z.x + 8 && cx < z.x + z.w - 8) openTrapDoor(z);
+    }
   }
 }
 
@@ -2500,7 +2558,7 @@ function makeDirtCover(z) {
   const g = cv.getContext('2d');
   const tImgs = TILE_IMGS[z.theme] || {}, TV = TILE_VARIANTS[z.theme] || {};
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    let id = TV.gnd_mid_fill;
+    let id = (z.kind === 'pit' && r === 0) ? TV.gnd_top_mid : TV.gnd_mid_fill;
     if (z.dir > 0 && c === cols - 1) id = TV.gnd_mid_right;     // الوجه الخارجي على اليمين
     if (z.dir < 0 && c === 0)        id = TV.gnd_mid_left;      // الوجه الخارجي على اليسار
     const img = tImgs[id];
@@ -2510,7 +2568,7 @@ function makeDirtCover(z) {
   z.cv = cv; z.pad = 0;
 }
 function makeCover(z) {
-  if (z.kind === 'chamber') return makeDirtCover(z);
+  if (z.kind === 'chamber' || z.kind === 'pit') return makeDirtCover(z);
   const pad = 20, cv = document.createElement('canvas');
   cv.width = z.w + pad * 2; cv.height = z.h + pad * 2;
   const g = cv.getContext('2d'), col = COVER_COL[z.theme] || COVER_COL.nature;
@@ -2548,6 +2606,24 @@ function drawSecretCovers() {
       }
     }
     ctx.globalAlpha = 1;
+  }
+}
+
+// خلفية الغرفة السرية بعد كشفها (تراب داكن) حتى لا تظهر السماء داخل الحفرة
+function drawRoomBacks() {
+  const W = parseInt(canvas.style.width) || canvas.width;
+  for (const z of secrets) {
+    if (!z.revealed || (z.kind !== 'pit' && z.kind !== 'trap')) continue;
+    if (z.x - camera.x > W + 40 || z.x + z.w - camera.x < -40) continue;
+    const g = LEVELS[GS.curLevel].gndRow, d = z.d;
+    const tImgs = TILE_IMGS[z.theme] || {}, TV = TILE_VARIANTS[z.theme] || {};
+    const img = tImgs[TV.gnd_mid_fill];
+    for (let r = g; r < g + 2; r++) for (let c = d.c; c < d.c + d.w; c++) {
+      if (imgOK(img)) ctx.drawImage(img, c * TS, r * TS, TS, TS);
+      else { ctx.fillStyle = '#5D4037'; ctx.fillRect(c * TS, r * TS, TS, TS); }
+    }
+    ctx.fillStyle = 'rgba(10,5,2,0.62)';
+    ctx.fillRect(d.c * TS, g * TS, d.w * TS, 2 * TS);
   }
 }
 
