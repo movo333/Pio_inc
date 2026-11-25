@@ -440,6 +440,231 @@ function ch_pre_finale(x) { const k=mk();
   k.hl.push({c:c+8,len:2,h:2},{c:c+10,len:2,h:1});
   return k; }
 
+// ══════════════════════════════════════════════════════════════
+//  قطع عالم Graveyard (26–50)
+// ══════════════════════════════════════════════════════════════
+
+// مقبرة مفتوحة: أشواك بين الشواهد + خفافيش
+function ch_grave_bones(x) { const k=mk();
+  const c1=x.ri(7,9), w1=spk(x,k,c1);
+  arc(k,c1-1,w1+2,G-2,3);
+  const c2=c1+w1+x.ri(4,6);
+  if (c2+4<=24) { const w2=spk(x,k,c2); arc(k,c2-1,w2+2,G-2,3); }
+  if (x.diff>=3) F_(x,k,c1+4,G-6);
+  if (x.diff>=6) F_(x,k,c2+2,G-5);
+  coinsH(k,2,5,G-1,2);
+  brk(k,22,G-5,false);
+  return k; }
+
+// قبو مسقوف: سقف منصات + عمودان + أعداء أرضيون
+function ch_grave_crypt(x) { const k=mk();
+  plat(k,4,G-5,20,false);
+  k.hl.push({c:8,len:2,h:2},{c:18,len:2,h:2});
+  coinsH(k,5,18,G-3,2);
+  W_(x,k,6,1);
+  if (x.diff>=4) W_(x,k,13,-1);
+  if (x.diff>=7) W_(x,k,22,1);
+  k.am.push({c:11,r:G-1});
+  if (x.diff>=5) F_(x,k,15,G-7);
+  return k; }
+
+// حفرة القبور: جسر متهالك بفجوة كل ثلاث بلاطات
+function ch_grave_tomb_pit(x) { const k=mk();
+  const gc=x.ri(4,6), len=x.ri(9,11); k.ga.push({c:gc,len});
+  for (let i=0;i<len;i++) { if (i%3===2) continue; k.cr.push({c:gc+i,r:G}); }
+  arc(k,gc-1,len+2,G-3,3);
+  F_(x,k,gc+(len>>1),G-6);
+  if (x.diff>=6) F_(x,k,gc+2,G-5);
+  W_(x,k,gc+len+x.ri(3,5));
+  return k; }
+
+// ممر الخفافيش: ثلاث منصات + عدة خفافيش
+function ch_grave_bat_corridor(x) { const k=mk();
+  plat(k,4,G-3,3,false); plat(k,12,G-4,3,false); plat(k,20,G-3,3,false);
+  const n=Math.min(2+(x.diff>>3),4);
+  for (let i=0;i<n;i++) F_(x,k,5+i*6,G-4-(i%2),i%2?-1:1);
+  coinsH(k,4,3,G-4); coinsH(k,12,3,G-5); coinsH(k,20,3,G-4);
+  if (x.diff>=4) W_(x,k,9);
+  brk(k,16,G-5,false);
+  return k; }
+
+// سراديب: قبوان بينهما منصة صغيرة
+function ch_grave_catacomb(x) { const k=mk();
+  plat(k,3,G-5,8,false); coinsH(k,3,8,G-3);
+  W_(x,k,6);
+  plat(k,13,G-3,3);
+  k.am.push({c:14,r:G-4});
+  plat(k,18,G-5,8,false); coinsH(k,18,8,G-3);
+  if (x.diff>=4) W_(x,k,22);
+  if (x.diff>=7) F_(x,k,11,G-7);
+  brk(k,16,G-6,false);
+  return k; }
+
+// جسر متهالك + خفافيش (دقة)
+function ch_grave_crumble_bats(x) { const k=mk();
+  const gc=x.ri(4,5), len=x.ri(10,12); k.ga.push({c:gc,len});
+  for (let i=0;i<len;i++) { if (i%4===3) continue; k.cr.push({c:gc+i,r:G}); }
+  for (let i=0;i<len;i+=3) k.co.push({c:gc+i,r:G-2});
+  F_(x,k,gc+3,G-6);
+  if (x.diff>=5) F_(x,k,gc+(len>>1),G-5);
+  if (x.diff>=8) F_(x,k,gc+len-3,G-6);
+  W_(x,k,gc+len+3);
+  return k; }
+
+const CHUNKS_GRAVE = {
+  grave_bones:ch_grave_bones, grave_crypt:ch_grave_crypt, grave_tomb_pit:ch_grave_tomb_pit,
+  grave_bat_corridor:ch_grave_bat_corridor, grave_catacomb:ch_grave_catacomb,
+  grave_crumble_bats:ch_grave_crumble_bats,
+};
+
+// ══════════════════════════════════════════════════════════════
+//  قطع عالم Winter (51–75)
+// ══════════════════════════════════════════════════════════════
+
+// بحيرة متجمدة: أرض واسعة + منصات خفيفة
+function ch_snow_frozen_lake(x) { const k=mk();
+  coinsH(k,2,24,G-1,2);
+  plat(k,6,G-3,4); plat(k,14,G-4,4); plat(k,22,G-3,4);
+  if (x.diff>=3) W_(x,k,5,1);
+  if (x.diff>=5) W_(x,k,13,-1);
+  if (x.diff>=7) F_(x,k,18,G-6);
+  brk(k,10,G-5,false);
+  return k; }
+
+// حفرة عريضة بجزر ثابتة متقاربة
+function ch_snow_pit_mover(x) { const k=mk();
+  const gc=x.ri(4,5), len=x.ri(10,12); k.ga.push({c:gc,len});
+  let c=gc, r=G-2, up=true;
+  while (c<gc+len-1) { plat(k,c,r,3); c+=5; r=up?G-3:G-2; up=!up; }
+  arc(k,gc-1,len+2,G-5,2);
+  if (x.diff>=4) F_(x,k,gc+(len>>1),G-7);
+  if (x.diff>=6) F_(x,k,gc+3,G-6);
+  W_(x,k,gc+len+3);
+  return k; }
+
+// جزر جوية ونوابض
+function ch_snow_sky_islands(x) { const k=mk();
+  k.spr.push({c:4,r:G-1});
+  plat(k,7,G-5,4); plat(k,13,G-6,4);
+  k.spr.push({c:19,r:G-1});
+  plat(k,22,G-5,5);
+  if (x.diff>=5) F_(x,k,10,G-8);
+  if (x.diff>=7) F_(x,k,16,G-9);
+  if (x.diff>=4) W_(x,k,26);
+  return k; }
+
+// جسر جليدي هش طويل
+function ch_snow_crumble_bridge(x) { const k=mk();
+  const gc=x.ri(4,5), len=x.ri(11,13); k.ga.push({c:gc,len});
+  for (let i=0;i<len;i++) k.cr.push({c:gc+i,r:G});
+  coinsH(k,gc,len,G-2);
+  if (x.diff>=4) F_(x,k,gc+(len>>1),G-5);
+  if (x.diff>=7) F_(x,k,gc+3,G-6);
+  W_(x,k,gc+len+3);
+  return k; }
+
+// برج نوابض: صعود ثم نزول هادئ
+function ch_snow_spring_tower(x) { const k=mk();
+  k.spr.push({c:4,r:G-1});
+  plat(k,7,G-5,4,false);
+  k.spr.push({c:9,r:G-6});
+  plat(k,13,G-8,4); k.am.push({c:15,r:G-9});
+  plat(k,19,G-5,3); plat(k,24,G-3,4);
+  if (x.diff>=5) F_(x,k,11,G-10);
+  if (x.diff>=7) W_(x,k,22);
+  return k; }
+
+// قمة جبلية: صعود 4 درجات وهبوط
+function ch_snow_peak(x) { const k=mk();
+  const hmax=4; let c=4;
+  for (let h=1;h<=hmax;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  k.hl.push({c,len:6,h:hmax}); coinsH(k,c,6,G-hmax-1);
+  k.am.push({c:c+2,r:G-hmax-1});
+  c+=6;
+  for (let h=hmax-1;h>=1;h--){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  if (x.diff>=5) F_(x,k,12,G-7);
+  if (x.diff>=6) W_(x,k,Math.min(c+1,27));
+  return k; }
+
+const CHUNKS_WINTER = {
+  snow_frozen_lake:ch_snow_frozen_lake, snow_pit_mover:ch_snow_pit_mover, snow_sky_islands:ch_snow_sky_islands,
+  snow_crumble_bridge:ch_snow_crumble_bridge, snow_spring_tower:ch_snow_spring_tower, snow_peak:ch_snow_peak,
+};
+
+// ══════════════════════════════════════════════════════════════
+//  قطع عالم Desert (76–100)
+// ══════════════════════════════════════════════════════════════
+
+// واحة راحة
+function ch_sand_oasis(x) { const k=mk();
+  coinsH(k,2,24,G-1,2);
+  k.am.push({c:6,r:G-1}); k.am.push({c:22,r:G-1});
+  brk(k,12,G-5,true);
+  plat(k,8,G-3,4,false); plat(k,18,G-3,4,false);
+  return k; }
+
+// صف أعمدة بأطوال مختلفة
+function ch_sand_pillars(x) { const k=mk();
+  const n=x.diff>=8?4:3; let c=x.ri(4,5);
+  for (let i=0;i<n&&c<=24;i++){
+    const h=x.ri(2,3);
+    k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1);
+    if (i>0&&x.diff>=3) W_(x,k,c-3);
+    c+=2+x.ri(4,5);
+  }
+  if (x.diff>=5) F_(x,k,14,G-6);
+  brk(k,22,G-5,false);
+  return k; }
+
+// ممر الأشواك: منصة عليا آمنة + أشواك أرضية
+function ch_sand_spike_corridor(x) { const k=mk();
+  plat(k,3,G-5,24,false);
+  let c=14; const cnt=x.diff>=8?3:2;
+  for (let i=0;i<cnt&&c+4<=26;i++){ const w=spk(x,k,c); arc(k,c-1,w+2,G-2,2); c+=w+x.ri(3,4); }
+  coinsH(k,4,20,G-6,2);
+  if (x.diff>=4) W_(x,k,10);
+  if (x.diff>=6) W_(x,k,6);
+  if (x.diff>=7) F_(x,k,15,G-7);
+  return k; }
+
+// حشد رملي
+function ch_sand_horde(x) { const k=mk();
+  [3,13,23].forEach(c=>plat(k,c,G-3,4,false));
+  const cnt=Math.min(3+(x.diff>>2),6);
+  for (let i=0;i<cnt;i++) W_(x,k,5+Math.floor(i*22/cnt),i%2?1:-1);
+  if (x.diff>=5) F_(x,k,10,G-5);
+  if (x.diff>=9) F_(x,k,22,G-5);
+  coinsH(k,3,4,G-4); coinsH(k,13,4,G-4); coinsH(k,23,4,G-4);
+  brk(k,18,G-5,false);
+  return k; }
+
+// هضبة رملية: صعود 3 ثم سطح عريض بمنصة معلقة
+function ch_sand_plateau(x) { const k=mk();
+  let c=4;
+  for (let h=1;h<=3;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  k.hl.push({c,len:8,h:3}); coinsH(k,c,8,G-4);
+  plat(k,c+2,G-7,3); 
+  c+=8;
+  for (let h=2;h>=1;h--){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  if (x.diff>=4) W_(x,k,27);
+  if (x.diff>=6) F_(x,k,15,G-8);
+  return k; }
+
+// رمال متحركة: حفرة بجزر حجرية متقاربة
+function ch_sand_quicksand(x) { const k=mk();
+  const gc=x.ri(4,5), len=x.ri(9,11); k.ga.push({c:gc,len});
+  let c=gc, r=G-2;
+  while (c<gc+len-1) { plat(k,c,r,3); c+=5; r=r===G-2?G-3:G-2; }
+  if (x.diff>=3) F_(x,k,gc+(len>>1),G-6);
+  if (x.diff>=6) F_(x,k,gc+3,G-5);
+  W_(x,k,gc+len+3);
+  return k; }
+
+const CHUNKS_DESERT = {
+  sand_oasis:ch_sand_oasis, sand_pillars:ch_sand_pillars, sand_spike_corridor:ch_sand_spike_corridor,
+  sand_horde:ch_sand_horde, sand_plateau:ch_sand_plateau, sand_quicksand:ch_sand_quicksand,
+};
+
 const CHUNKS_NEW = {
   low_arc:ch_low_arc, double_gap:ch_double_gap, stair_tower:ch_stair_tower, stairs_up:ch_stairs_up,
   zig_zig:ch_zig_zig, tunnel:ch_tunnel, wall_shoot:ch_wall_shoot, spring_chain:ch_spring_chain,
@@ -454,7 +679,7 @@ const CHUNKS = {
   vault:ch_vault, quiet:ch_quiet, mesa:ch_mesa, zigzag:ch_zigzag, rest:ch_rest, boss:ch_boss, finale:ch_finale,
 };
 
-Object.assign(CHUNKS, CHUNKS_NEW);
+Object.assign(CHUNKS, CHUNKS_NEW, CHUNKS_GRAVE, CHUNKS_WINTER, CHUNKS_DESERT);
 
 // ══════════════════════════════════════════════════════════════
 //  أنماط المراحل (Archetypes) — كل مرحلة لها هوية مختلفة
@@ -518,6 +743,87 @@ const LEVEL_PLANS = {
   23: { arch:'rush',     sig:'mastery-combined',      seq:['open','wall_shoot','spike_field','tunnel','stairs_up','flyers','finale'] },
   24: { arch:'rush',     sig:'penultimate',           seq:['open','double_gap','spike_field','horde','pit','spring_chain','spike_field','finale'] },
   25: { arch:'rush',     isBoss:true, sig:'final-boss', seq:['open','horde','spike_field','gap_series','zig_zig','rest','boss','boss','pre_finale'] },
+
+  // ───── Graveyard 26–50 ─────
+  26: { arch:'tutorial', sig:'gravity-shift-easy',   seq:['open','low_arc','grave_bones','gap','finale'] },
+  27: { arch:'tutorial', sig:'first-crumble-safe',   seq:['open','crumble','grave_bones','mountain','finale'] },
+  28: { arch:'tutorial', sig:'first-crypt',          seq:['open','grave_crypt','gap','stair_tower','finale'] },
+  29: { arch:'tutorial', sig:'bats-intro',           seq:['open','grave_bat_corridor','gap','grave_bones','finale'] },
+  30: { arch:'tutorial', isBoss:true, sig:'boss-arena-catacomb', seq:['open','grave_bones','grave_catacomb','rest','boss'] },
+  31: { arch:'classic',  sig:'tomb-hopping',         seq:['open','grave_tomb_pit','grave_bones','gap_series','finale'] },
+  32: { arch:'classic',  sig:'crumble-precision',    seq:['open','crumble','grave_crumble_bats','crumble','finale'] },
+  33: { arch:'classic',  sig:'crypt-explorer',       seq:['open','grave_crypt','wall_shoot','grave_catacomb','finale'] },
+  34: { arch:'classic',  sig:'bat-swarm',            seq:['open','grave_bat_corridor','flyers','grave_bat_corridor','finale'] },
+  35: { arch:'classic',  isBoss:true, sig:'boss-arena-crypt', seq:['open','grave_crypt','rest','boss'] },
+  36: { arch:'gauntlet', sig:'catacomb-depth',       seq:['open','grave_catacomb','grave_crypt','gap_series','grave_bones','finale'] },
+  37: { arch:'gauntlet', sig:'tomb-pit-gauntlet',    seq:['open','grave_tomb_pit','spike_field','grave_tomb_pit','finale'] },
+  38: { arch:'gauntlet', sig:'crumble-nightmare',    seq:['open','grave_crumble_bats','crumble','grave_crumble_bats','finale'] },
+  39: { arch:'gauntlet', sig:'bat-crypt-combo',      seq:['open','grave_crypt','grave_bat_corridor','spike_field','finale'] },
+  40: { arch:'gauntlet', isBoss:true, sig:'boss-arena-2', seq:['open','grave_bones','rest','boss'] },
+  41: { arch:'gauntlet', sig:'bones-crypt-bones',    seq:['open','grave_bones','grave_crypt','grave_bones','grave_bat_corridor','finale'] },
+  42: { arch:'gauntlet', sig:'pit-triplet',          seq:['open','grave_tomb_pit','crumble_islands','grave_tomb_pit','finale'] },
+  43: { arch:'gauntlet', sig:'underground-maze',     seq:['open','grave_crypt','tunnel','grave_catacomb','spike_field','finale'] },
+  44: { arch:'gauntlet', sig:'aerial-graveyard',     seq:['open','flyers','grave_bat_corridor','zig_zig','grave_bones','finale'] },
+  45: { arch:'gauntlet', isBoss:true, sig:'boss-arena-3', seq:['open','grave_bones','grave_catacomb','rest','boss'] },
+  46: { arch:'rush',     sig:'final-rush-1',         seq:['open','grave_crumble_bats','spike_field','grave_crypt','grave_bones','finale'] },
+  47: { arch:'rush',     sig:'final-rush-2',         seq:['open','grave_bat_corridor','grave_tomb_pit','grave_catacomb','horde','finale'] },
+  48: { arch:'rush',     sig:'mastery',              seq:['open','grave_crypt','spike_field','grave_crumble_bats','grave_bat_corridor','finale'] },
+  49: { arch:'rush',     sig:'penultimate',          seq:['open','grave_bones','grave_tomb_pit','grave_crypt','grave_catacomb','grave_bat_corridor','finale'] },
+  50: { arch:'rush',     isBoss:true, sig:'final-boss-graveyard', seq:['open','grave_bones','grave_crypt','spike_field','rest','boss','boss','pre_finale'] },
+
+  // ───── Winter 51–75 ─────
+  51: { arch:'tutorial', sig:'frozen-intro',         seq:['open','snow_frozen_lake','gap','low_arc','finale'] },
+  52: { arch:'tutorial', sig:'first-sky-island',     seq:['open','snow_sky_islands','gap','snow_frozen_lake','finale'] },
+  53: { arch:'tutorial', sig:'first-crumble-bridge', seq:['open','snow_crumble_bridge','gap','mountain','finale'] },
+  54: { arch:'tutorial', sig:'first-spring-tower',   seq:['open','snow_spring_tower','gap','snow_frozen_lake','finale'] },
+  55: { arch:'tutorial', isBoss:true, sig:'boss-arena-winter-1', seq:['open','snow_frozen_lake','rest','boss'] },
+  56: { arch:'classic',  sig:'ice-precision',        seq:['open','snow_crumble_bridge','snow_pit_mover','snow_frozen_lake','finale'] },
+  57: { arch:'classic',  sig:'peak-climb',           seq:['open','snow_peak','gap','mountain','finale'] },
+  58: { arch:'classic',  sig:'sky-cascade',          seq:['open','snow_sky_islands','snow_spring_tower','gap_series','finale'] },
+  59: { arch:'classic',  sig:'frozen-lake-gauntlet', seq:['open','snow_frozen_lake','snow_pit_mover','snow_crumble_bridge','finale'] },
+  60: { arch:'classic',  isBoss:true, sig:'boss-arena-winter-2', seq:['open','snow_peak','rest','boss'] },
+  61: { arch:'gauntlet', sig:'ice-maze',             seq:['open','snow_crumble_bridge','snow_frozen_lake','snow_crumble_bridge','spike_field','finale'] },
+  62: { arch:'gauntlet', sig:'peak-sky-chain',       seq:['open','snow_peak','snow_sky_islands','snow_pit_mover','finale'] },
+  63: { arch:'gauntlet', sig:'spring-chain-mastery', seq:['open','snow_spring_tower','snow_spring_tower','snow_sky_islands','finale'] },
+  64: { arch:'gauntlet', sig:'frozen-gauntlet',      seq:['open','snow_frozen_lake','spike_field','snow_crumble_bridge','snow_frozen_lake','finale'] },
+  65: { arch:'gauntlet', isBoss:true, sig:'boss-arena-winter-3', seq:['open','snow_sky_islands','rest','boss'] },
+  66: { arch:'gauntlet', sig:'aerial-mastery',       seq:['open','snow_sky_islands','flyers','snow_spring_tower','snow_sky_islands','finale'] },
+  67: { arch:'gauntlet', sig:'peak-to-peak',         seq:['open','snow_peak','snow_peak','pit','snow_peak','finale'] },
+  68: { arch:'gauntlet', sig:'crumble-gauntlet',     seq:['open','snow_crumble_bridge','snow_crumble_bridge','snow_pit_mover','snow_crumble_bridge','finale'] },
+  69: { arch:'gauntlet', sig:'frozen-everything',    seq:['open','snow_frozen_lake','snow_peak','snow_spring_tower','snow_sky_islands','finale'] },
+  70: { arch:'gauntlet', isBoss:true, sig:'boss-arena-winter-4', seq:['open','snow_frozen_lake','snow_peak','rest','boss'] },
+  71: { arch:'rush',     sig:'winter-rush-1',        seq:['open','snow_crumble_bridge','snow_frozen_lake','horde','snow_sky_islands','finale'] },
+  72: { arch:'rush',     sig:'winter-rush-2',        seq:['open','snow_peak','spike_field','snow_pit_mover','snow_spring_tower','finale'] },
+  73: { arch:'rush',     sig:'winter-mastery',       seq:['open','snow_sky_islands','snow_peak','snow_crumble_bridge','snow_pit_mover','snow_frozen_lake','finale'] },
+  74: { arch:'rush',     sig:'winter-penultimate',   seq:['open','snow_peak','snow_spring_tower','snow_crumble_bridge','snow_sky_islands','horde','finale'] },
+  75: { arch:'rush',     isBoss:true, sig:'final-boss-winter', seq:['open','snow_peak','snow_frozen_lake','horde','rest','boss','boss','pre_finale'] },
+
+  // ───── Desert 76–100 ─────
+  76: { arch:'tutorial', sig:'sand-intro',           seq:['open','sand_pillars','gap','sand_oasis','finale'] },
+  77: { arch:'tutorial', sig:'first-horde',          seq:['open','sand_horde','gap','sand_pillars','finale'] },
+  78: { arch:'tutorial', sig:'first-corridor',       seq:['open','sand_spike_corridor','gap','sand_plateau','finale'] },
+  79: { arch:'tutorial', sig:'quicksand-intro',      seq:['open','sand_quicksand','gap','sand_pillars','finale'] },
+  80: { arch:'tutorial', isBoss:true, sig:'boss-arena-desert-1', seq:['open','sand_horde','rest','boss'] },
+  81: { arch:'classic',  sig:'pillar-runner',        seq:['open','sand_pillars','sand_horde','sand_pillars','finale'] },
+  82: { arch:'classic',  sig:'desert-plateau',       seq:['open','sand_plateau','gap_series','sand_quicksand','finale'] },
+  83: { arch:'classic',  sig:'spike-trial',          seq:['open','sand_spike_corridor','horde','sand_spike_corridor','finale'] },
+  84: { arch:'classic',  sig:'sandstorm',            seq:['open','horde','sand_quicksand','horde','finale'] },
+  85: { arch:'classic',  isBoss:true, sig:'boss-arena-desert-2', seq:['open','sand_pillars','rest','boss'] },
+  86: { arch:'gauntlet', sig:'desert-gauntlet-1',    seq:['open','sand_spike_corridor','sand_horde','sand_pillars','sand_spike_corridor','finale'] },
+  87: { arch:'gauntlet', sig:'plateau-maze',         seq:['open','sand_plateau','zig_zig','sand_plateau','spike_field','finale'] },
+  88: { arch:'gauntlet', sig:'quicksand-chain',      seq:['open','sand_quicksand','sand_quicksand','flyers','sand_quicksand','finale'] },
+  89: { arch:'gauntlet', sig:'pillar-mastery',       seq:['open','sand_pillars','wall_shoot','sand_pillars','horde','finale'] },
+  90: { arch:'gauntlet', isBoss:true, sig:'boss-arena-desert-3', seq:['open','sand_horde','rest','boss'] },
+  91: { arch:'gauntlet', sig:'desert-mastery-1',     seq:['open','sand_spike_corridor','sand_horde','sand_quicksand','sand_pillars','finale'] },
+  92: { arch:'gauntlet', sig:'desert-mastery-2',     seq:['open','sand_plateau','sand_pillars','tunnel','horde','finale'] },
+  93: { arch:'gauntlet', sig:'sandstorm-gauntlet',   seq:['open','horde','sand_spike_corridor','flyers','sand_horde','finale'] },
+  94: { arch:'gauntlet', sig:'desert-combined',      seq:['open','sand_quicksand','sand_pillars','sand_plateau','sand_spike_corridor','finale'] },
+  95: { arch:'gauntlet', isBoss:true, sig:'boss-arena-desert-4', seq:['open','sand_horde','sand_pillars','rest','boss'] },
+  96: { arch:'rush',     sig:'final-rush-1',         seq:['open','sand_horde','spike_field','sand_pillars','sand_spike_corridor','finale'] },
+  97: { arch:'rush',     sig:'final-rush-2',         seq:['open','sand_quicksand','horde','sand_plateau','flyers','sand_horde','finale'] },
+  98: { arch:'rush',     sig:'final-mastery',        seq:['open','sand_spike_corridor','sand_pillars','sand_quicksand','horde','sand_plateau','finale'] },
+  99: { arch:'rush',     sig:'final-penultimate',    seq:['open','sand_horde','sand_spike_corridor','sand_quicksand','sand_pillars','sand_plateau','horde','finale'] },
+  100:{ arch:'rush',     isBoss:true, sig:'FINAL-BOSS-DESERT', seq:['open','sand_horde','sand_spike_corridor','sand_quicksand','rest','boss','boss','pre_finale'] },
 };
 
 function planLevel(n, diff, worldIdx, theme, rand, ri, quietN) {
