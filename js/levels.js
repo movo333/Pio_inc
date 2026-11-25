@@ -319,6 +319,133 @@ function ch_finale(x) { const k=mk();
   coinsH(k,19,2,G-2); coinsH(k,21,2,G-3); coinsH(k,23,3,G-4);
   return k; }
 
+// ══════════════════════════════════════════════════════════════
+//  قطع جديدة (الدفعة 1 — عالم Nature) — كل قطعة عرضها 30 عموداً
+//  تستخدم فقط: plat, brk, coinsH, arc, spk, W_, F_
+// ══════════════════════════════════════════════════════════════
+
+// عملات على ارتفاع منخفض — تعليم أساسي للقفز
+function ch_low_arc(x) { const k=mk();
+  coinsH(k,2,10,G-1,1);
+  arc(k,4,8,G-2,2);
+  if (x.diff>=3) spk(x,k,14);
+  if (x.diff>=5) W_(x,k,22);
+  return k; }
+
+// فجوتان متتاليتان بمنصة بينهما — دقة
+function ch_double_gap(x) { const k=mk();
+  const g1=x.ri(5,7), g2=g1+x.ri(6,8);
+  const w1=Math.min(4,2+(x.diff>>3)), w2=Math.min(5,3+(x.diff>>3));
+  k.ga.push({c:g1,len:w1}); k.ga.push({c:g2,len:w2});
+  plat(k,g1+w1+1,G-2,Math.max(2,g2-(g1+w1)-2),true);
+  arc(k,g1-1,w1+2,G-2,2);
+  arc(k,g2-1,w2+2,G-2,2);
+  if (x.diff>=6) F_(x,k,(g1+g2)>>1,G-6);
+  return k; }
+
+// برج مدرّج — تسلّق بمنصات ثم ذخيرة في القمة
+function ch_stair_tower(x) { const k=mk();
+  const base=x.ri(4,6), steps=x.diff>=8?4:3;
+  for (let i=0;i<steps;i++){
+    const r=Math.max(2,G-3-i*2);                       // لا يخرج فوق أعلى الخريطة
+    plat(k,base+i*4,r,3);
+    coinsH(k,base+i*4,3,r-1);
+  }
+  const topC=base+steps*4;
+  k.am.push({c:Math.min(topC,25), r:Math.max(2,G-3-steps*2)+0});
+  if (x.diff>=5) F_(x,k,base+((steps*4)>>1),G-7);
+  if (x.diff>=3) W_(x,k,Math.min(topC+4,26));
+  return k; }
+
+// درج صاعد + هضبة ذروة + نزول
+function ch_stairs_up(x) { const k=mk();
+  const hmax=x.diff>=8?4:3; let c=x.ri(3,4);
+  for (let h=1;h<=hmax&&c+2<=24;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  const peak=c;
+  k.hl.push({c:peak,len:3,h:hmax}); coinsH(k,peak,3,G-hmax-1);
+  k.am.push({c:peak+1,r:G-hmax-1});
+  c+=3;
+  for (let h=hmax-1;h>=1&&c+2<=26;h--){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  if (x.diff>=4) W_(x,k,Math.min(c+1,26));
+  return k; }
+
+// منصات متناوبة صعوداً وهبوطاً
+function ch_zig_zig(x) { const k=mk();
+  const n=x.diff>=6?5:4; let r=G-3, c=x.ri(2,3);
+  for (let i=0;i<n;i++){
+    const len=3; plat(k,c,r,len); coinsH(k,c,len,r-1);
+    c+=len+x.ri(2,3);
+    r=Math.max(G-5,Math.min(G-2,r+(i%2===0?-1:1)));
+    if (c+len>27) break;
+  }
+  if (x.diff>=4) F_(x,k,14,G-6);
+  if (x.diff>=3) W_(x,k,24);
+  return k; }
+
+// نفق منصات منخفض — سقف + أعداء أرضيون
+function ch_tunnel(x) { const k=mk();
+  plat(k,3,G-4,24);
+  coinsH(k,4,22,G-5,2);
+  coinsH(k,5,20,G-2,2);
+  const cnt=Math.min(2+(x.diff>>3),4);
+  for (let i=0;i<cnt;i++) W_(x,k,6+Math.floor(i*18/cnt),i%2?1:-1);
+  if (x.diff>=5) F_(x,k,14,G-6);
+  return k; }
+
+// جدار كتل يُكسر بالرصاص
+function ch_wall_shoot(x) { const k=mk();
+  const c=x.ri(8,12);
+  for (let r=G-3;r<G;r++) brk(k,c,r,r===G-3);
+  k.am.push({c:c-3,r:G-1});
+  k.am.push({c:c+4,r:G-1});
+  coinsH(k,c+2,4,G-1);
+  plat(k,c-1,G-5,3); coinsH(k,c-1,3,G-6);
+  if (x.diff>=4) W_(x,k,c+6);
+  return k; }
+
+// نابضان متتاليان
+function ch_spring_chain(x) { const k=mk();
+  k.spr.push({c:5,r:G-1});
+  plat(k,8,G-5,5); coinsH(k,8,5,G-6);
+  k.spr.push({c:15,r:G-1});
+  plat(k,18,G-4,6); coinsH(k,18,6,G-5);
+  if (x.diff>=4) F_(x,k,12,G-8);
+  if (x.diff>=6) W_(x,k,24);
+  return k; }
+
+// ساحة أشواك على أرض مستوية
+function ch_spike_field(x) { const k=mk();
+  let c=x.ri(4,6); const cnt=x.diff>=8?3:2;
+  for (let i=0;i<cnt&&c+5<=26;i++){ const w=spk(x,k,c); arc(k,c-1,w+2,G-2,3); c+=w+4; }
+  if (x.diff>=3) W_(x,k,Math.min(c+2,26));
+  brk(k,4,G-5,false);
+  return k; }
+
+// واحة: راحة طويلة بقلب وذخيرة وعملات
+function ch_oasis(x) { const k=mk();
+  coinsH(k,2,26,G-1,1);
+  k.am.push({c:8,r:G-1}); k.am.push({c:20,r:G-1});
+  brk(k,14,G-5,true); brk(k,5,G-5,false); brk(k,23,G-5,false);
+  plat(k,10,G-3,8,false);
+  return k; }
+
+// تحدي قبل العلم — هضبة مرتفعة
+function ch_pre_finale(x) { const k=mk();
+  let c=4;
+  for (let h=1;h<=3;h++){ k.hl.push({c,len:2,h}); coinsH(k,c,2,G-h-1); c+=2; }
+  k.hl.push({c,len:8,h:3}); coinsH(k,c,8,G-4);
+  k.am.push({c:c+3,r:G-4});
+  if (x.diff>=6) F_(x,k,c+4,G-7);
+  if (x.diff>=4) W_(x,k,c+6);
+  k.hl.push({c:c+8,len:2,h:2},{c:c+10,len:2,h:1});
+  return k; }
+
+const CHUNKS_NEW = {
+  low_arc:ch_low_arc, double_gap:ch_double_gap, stair_tower:ch_stair_tower, stairs_up:ch_stairs_up,
+  zig_zig:ch_zig_zig, tunnel:ch_tunnel, wall_shoot:ch_wall_shoot, spring_chain:ch_spring_chain,
+  spike_field:ch_spike_field, oasis:ch_oasis, pre_finale:ch_pre_finale,
+};
+
 const CHUNKS = {
   open:ch_open, gap:ch_gap, gap_series:ch_gap_series, mountain:ch_mountain, pillars:ch_pillars, pit:ch_pit,
   crumble:ch_crumble, crumble_islands:ch_crumble_islands, spring_tower:ch_spring_tower,
@@ -326,6 +453,8 @@ const CHUNKS = {
   spike_tunnel:ch_spike_tunnel, horde:ch_horde, flyers:ch_flyers, block_wall:ch_block_wall,
   vault:ch_vault, quiet:ch_quiet, mesa:ch_mesa, zigzag:ch_zigzag, rest:ch_rest, boss:ch_boss, finale:ch_finale,
 };
+
+Object.assign(CHUNKS, CHUNKS_NEW);
 
 // ══════════════════════════════════════════════════════════════
 //  أنماط المراحل (Archetypes) — كل مرحلة لها هوية مختلفة
@@ -359,7 +488,45 @@ const MIN_DIFF = { mesa:2, gap_series:2, crumble_islands:5, spike_tunnel:4, hord
                    crumble:3, pit:3, sky_islands:3, block_wall:2 };
 const PITS = new Set(['gap','gap_series','pit','crumble','crumble_islands','sky_islands']);
 
+// ══════════════════════════════════════════════════════════════
+//  خطط المراحل — عالم Nature (1–25)
+//  هذه الخطط تحلّ محل المراحل 1–25 بالكامل (تتقدّم على TMX_LEVELS القديمة).
+// ══════════════════════════════════════════════════════════════
+const LEVEL_PLANS = {
+  1:  { arch:'tutorial', sig:'flat+coin-trails',      seq:['open','low_arc','gap','open','finale'] },
+  2:  { arch:'tutorial', sig:'first-jump-lesson',     seq:['open','gap','gap','low_arc','coin_heaven','finale'] },
+  3:  { arch:'tutorial', sig:'first-platform',        seq:['open','stair_tower','gap','mountain','finale'] },
+  4:  { arch:'tutorial', sig:'first-spring',          seq:['open','spring_chain','gap','low_arc','finale'] },
+  5:  { arch:'tutorial', isBoss:true, sig:'mini-boss-1', seq:['open','gap','mountain','stairs_up','rest','boss'] },
+  6:  { arch:'classic',  sig:'gap-series-intro',      seq:['open','gap_series','gap','stair_tower','finale'] },
+  7:  { arch:'classic',  sig:'double-jump-precision', seq:['open','double_gap','low_arc','double_gap','finale'] },
+  8:  { arch:'classic',  sig:'spike-intro',           seq:['open','spike_field','gap','mountain','finale'] },
+  9:  { arch:'classic',  sig:'shoot-the-wall',        seq:['open','wall_shoot','gap','spring_chain','finale'] },
+  10: { arch:'classic',  isBoss:true, sig:'mini-boss-2', seq:['open','gap','gap_series','zig_zig','rest','boss'] },
+  11: { arch:'hills',    sig:'hill-assault',          seq:['open','mountain','double_gap','stairs_up','spike_field','finale'] },
+  12: { arch:'hills',    sig:'sky-vault-intro',       seq:['open','spring_chain','vault','gap','zig_zig','finale'] },
+  13: { arch:'hills',    sig:'pit-trial',             seq:['open','pit','gap_series','tunnel','finale'] },
+  14: { arch:'hills',    sig:'flyer-trial',           seq:['open','flyers','gap','horde','spike_field','finale'] },
+  15: { arch:'hills',    isBoss:true, sig:'boss-arena-1', seq:['open','gap','zig_zig','rest','boss','pre_finale'] },
+  16: { arch:'gauntlet', sig:'gauntlet-1',            seq:['open','spike_field','gap_series','tunnel','stairs_up','spike_field','finale'] },
+  17: { arch:'gauntlet', sig:'vertical-mastery',      seq:['open','stair_tower','zig_zig','stair_tower','gap_series','finale'] },
+  18: { arch:'gauntlet', sig:'fortress',              seq:['open','wall_shoot','horde','spike_field','tunnel','finale'] },
+  19: { arch:'gauntlet', sig:'aerial-trial',          seq:['open','flyers','zig_zig','pit','flyers','finale'] },
+  20: { arch:'gauntlet', isBoss:true, sig:'boss-arena-2', seq:['open','horde','gap_series','rest','boss','pre_finale'] },
+  21: { arch:'rush',     sig:'final-rush-1',          seq:['open','double_gap','spike_field','horde','gap_series','spike_field','finale'] },
+  22: { arch:'rush',     sig:'final-rush-2',          seq:['open','pit','gap_series','flyers','zig_zig','horde','finale'] },
+  23: { arch:'rush',     sig:'mastery-combined',      seq:['open','wall_shoot','spike_field','tunnel','stairs_up','flyers','finale'] },
+  24: { arch:'rush',     sig:'penultimate',           seq:['open','double_gap','spike_field','horde','pit','spring_chain','spike_field','finale'] },
+  25: { arch:'rush',     isBoss:true, sig:'final-boss', seq:['open','horde','spike_field','gap_series','zig_zig','rest','boss','boss','pre_finale'] },
+};
+
 function planLevel(n, diff, worldIdx, theme, rand, ri, quietN) {
+  // خطة مكتوبة صراحةً لهذه المرحلة؟ استخدمها (مع احترام مقاطع الهدوء المطلوبة)
+  if (typeof LEVEL_PLANS!=='undefined' && LEVEL_PLANS[n]) {
+    const p=LEVEL_PLANS[n], body=p.seq.slice();
+    for (let q=0;q<(quietN||0);q++) body.splice(Math.max(1,Math.floor(body.length*(q+1)/((quietN||0)+1))),0,'quiet');
+    return { arch:p.arch, seq:body, isBoss:!!p.isBoss };
+  }
   const arch = diff<=2 ? 'tutorial' : ARCH_ROT[(diff + worldIdx*4) % ARCH_ROT.length];
   const isBoss = diff%5===0;
   let nb = 4 + (diff/3|0) + ri(0,1);
@@ -412,7 +579,7 @@ function generateLevel(n, quietN) {
     B: diff<=15 ? baseEt.boss : bossPool[Math.floor(diff/8)%bossPool.length],
   };
 
-  const TMX    = (typeof TMX_LEVELS!=='undefined' && TMX_LEVELS[n]) ? TMX_LEVELS[n] : null;
+  const TMX    = (typeof LEVEL_PLANS!=='undefined' && LEVEL_PLANS[n]) ? null : ((typeof TMX_LEVELS!=='undefined' && TMX_LEVELS[n]) ? TMX_LEVELS[n] : null);   // خطط LEVEL_PLANS (1–25) تتقدّم على المراحل اليدوية القديمة
   const plan   = TMX ? {seq:['tmx'],arch:'tmx'} : planLevel(n,diff,worldIdx,theme,rand,ri,quietN);
   const chunks = TMX ? [] : plan.seq.map(t=>(CHUNKS[t]||CHUNKS.open)(x));
   const COLS   = TMX ? TMX.cols : 8 + chunks.reduce((s,c)=>s+c.w,0) + 26;   // ذيل أطول: مكان للعلم ثم القصر
