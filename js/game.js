@@ -17,6 +17,12 @@ const MAX_VY = 16;
 // Tile cell codes
 const T = { AIR:0,GND:1,PLT:2,COIN:3,WALKER:4,FLYER:5,AMMO:6,GOAL:7,SPIKE:8,BREAK:9,SPRING:10,CRUMBLE:11,HEART:12 };
 
+// أرقام صور البلاط (تُعرَّف هنا فقط إن لم يعرّفها ملف المراحل)
+if (typeof TILE_VARIANTS === 'undefined' || !TILE_VARIANTS || !TILE_VARIANTS.nature || TILE_VARIANTS.nature.gnd_top_mid === undefined) {
+  const _tv = { gnd_top_left:2,gnd_top_mid:3,gnd_top_right:4,gnd_mid_left:5,gnd_mid_fill:6,gnd_mid_right:7,gnd_bot_left:8,gnd_bot_mid:9,gnd_bot_right:10,plat_left:15,plat_mid:14,plat_right:13,breakable:18 };
+  window.TILE_VARIANTS = { nature:_tv, graveyard:_tv, winter:_tv, desert:_tv };
+}
+
 // ── السيرفر (حفظ سحابي + لوحة الصدارة + الدفع) ──
 const API_BASE = 'https://superpioar22.netlify.app/.netlify/functions';
 const GAME_API = API_BASE + '/pi-game';
@@ -56,6 +62,7 @@ const AMB = (() => {
 // ── AUDIO SYSTEM ──
 // نستخدم AudioContext + XHR للأصوات الحرجة (تشغيل فوري بلا تأخير)
 // وpool بسيط للباقي
+const COIN_VOL_MULT = 0.3;   // صوت جمع العملات (الأصل 1.0) — 0.3 = أخفض بكثير؛ غيّر الرقم للتحكم
 const SFX = (() => {
   const BASE = 'assets/sounds/';
   const MAP = {
@@ -205,6 +212,7 @@ const SFX = (() => {
     synth,
     play(name, vol) {
       if (muted || !MAP[name]) return;
+      if (name === 'coin') vol = (vol !== undefined ? vol : 0.7) * COIN_VOL_MULT;   // صوت العملة مخفَّض (COIN_VOL_MULT)
       if (!playAC(name, vol)) playPool(name, vol);
     },
     stopAll,
@@ -285,6 +293,96 @@ const SPR = {};        // SPR.idle = [Image,Image,...], SPR.bee = Image
 const TILE_IMGS = {};  // TILE_IMGS['nature'][1] = Image
 const OBJ_IMGS  = {};  // OBJ_IMGS['nature']['Tree_1.png'] = Image
 const UI_IMGS   = {};  // UI_IMGS.splash = Image
+
+// ══════════════════════════════════════════════════════
+//  OBJECTS — أكسسوارات الخريطة (assets/objests/<theme>/)
+//  - تُحمَّل أكسسوارات العالم الحالي فقط (توفير ذاكرة الهاتف)
+//  - الصور الكبيرة تُصغَّر عند التحميل (Tree_3 = 7.5MB / 3136px)
+//  - إن لم يوجد المجلد 'objests' يجرّب 'objects' تلقائياً
+//  - ملفات بنفس الصورة بأسماء مختلفة (Crystal=SnowMan ...) لا تُحمَّل مرتين
+//  الصيغة: [اسم الملف, العرض بوحدة البلاطة TS]
+// ══════════════════════════════════════════════════════
+const OBJ_DIRS = ['assets/objests/', 'assets/objects/'];
+const OBJ_MAX_PX = 768;
+const OBJ_SETS = {
+  nature: {
+    trees: [['Tree_3.png', 5.4], ['Crate.png', 4.2], ['Tree_1.png', 4.6], ['Tree_2.png', 4.8]],
+    props: [['Bush__1_.png', 2.4], ['Bush__3_.png', 2.6], ['Bush__4_.png', 2.4], ['Stone.png', 2.4],
+            ['Bush__2_.png', 2.4], ['Mushroom_1.png', 1.3], ['Mushroom_2.png', 1.3], ['Sign_1.png', 1.5], ['Sign_2.png', 1.5]],
+  },
+  graveyard: {
+    trees: [['Tree.png', 5.0], ['DeadBush5.png', 3.6], ['Dead_Tree.png', 4.6]],
+    props: [['Bush__1_.png', 2.2], ['Bush__2_.png', 2.2], ['DeadBush.png', 3.4], ['DeadBush5.png', 3.2],
+            ['Tombstone_1.png', 1.8], ['Tombstone_2.png', 1.8], ['Skeleton.png', 2.4], ['ArrowSign.png', 1.6], ['Sign.png', 1.5]],
+  },
+  winter: {
+    trees: [['Tree_1.png', 4.4], ['Tree_2.png', 4.8]],
+    props: [['SnowMan.png', 3.2], ['IceBox.png', 3.2], ['Igloo.png', 3.2], ['Stone.png', 2.8], ['Crate.png', 2.4],
+            ['Crystal.png', 2.6], ['Sign_1.png', 1.5], ['Sign_2.png', 1.5]],
+  },
+  desert: {
+    trees: [['Tree.png', 4.2], ['Cactus__1_.png', 1.7]],
+    props: [['Bush__1_.png', 2.6], ['Bush__2_.png', 2.8], ['Cactus__3_.png', 2.8], ['Crate.png', 3.4], ['Grass__2_.png', 1.8],
+            ['Cactus__2_.png', 2.2], ['Cactus_1.png', 1.8], ['Skeleton.png', 2.4], ['Sign.png', 1.5], ['SignArrow.png', 1.6], ['Rock_1.png', 2.2]],
+  },
+};
+const _objStore = {};     // theme -> { file: { el, ok, dir } }
+window._objUrls = [];     // للتخزين على الجهاز
+window._objFailed = [];
+function _objFiles(theme) {
+  const set = OBJ_SETS[theme]; if (!set) return [];
+  return [...new Set(set.trees.concat(set.props).map(e => e[0]))];
+}
+function _objLoadOne(theme, file, box, dirIdx) {
+  const ent = box[file] || (box[file] = { el: null, ok: false });
+  if (dirIdx >= OBJ_DIRS.length) {
+    ent.failed = true;
+    const p = theme + '/' + file;
+    if (!window._objFailed.includes(p)) window._objFailed.push(p);
+    console.warn('[Objects] missing:', p);
+    return;
+  }
+  const v = window.ASSETS_VERSION ? '?v=' + window.ASSETS_VERSION : '';
+  const url = OBJ_DIRS[dirIdx] + theme + '/' + encodeURIComponent(file) + v;
+  const img = new Image();
+  img.onload = () => {
+    if (!img.naturalWidth) { _objLoadOne(theme, file, box, dirIdx + 1); return; }
+    const k = Math.min(1, OBJ_MAX_PX / Math.max(img.naturalWidth, img.naturalHeight));
+    if (k < 1) {
+      try {
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.naturalWidth * k));
+        c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        ent.el = c; ent.w = c.width; ent.h = c.height;
+      } catch (e) { ent.el = img; ent.w = img.naturalWidth; ent.h = img.naturalHeight; }
+    } else { ent.el = img; ent.w = img.naturalWidth; ent.h = img.naturalHeight; }
+    ent.ok = true;
+    window._objUrls.push(url.split('?')[0]);
+  };
+  img.onerror = () => _objLoadOne(theme, file, box, dirIdx + 1);
+  img.src = url;
+}
+function ensureObjs(theme) {
+  if (_objStore[theme]) return _objStore[theme];
+  const box = _objStore[theme] = {};
+  for (const f of _objFiles(theme)) _objLoadOne(theme, f, box, 0);
+  // نحدّث الجدول القديم أيضاً (تفاديًا لأي كود آخر يقرأ OBJ_IMGS)
+  OBJ_IMGS[theme] = OBJ_IMGS[theme] || {};
+  return box;
+}
+// اختيار ثابت (نفس الموضع = نفس الأكسسوار دائماً) حسب فئة الاسم: شجرة أو عنصر أرضي
+function _objPick(theme, d) {
+  if (d._pick) return d._pick;
+  const set = OBJ_SETS[theme] || OBJ_SETS.nature;
+  const isTree = /^(Tree|Dead_Tree|Oasis_Palm)/.test(d.img || '');
+  const pool = isTree ? set.trees : set.props;
+  let h = ((d.c | 0) * 73856093) ^ ((d.r | 0) * 19349663);
+  const nm = d.img || '';
+  for (let i = 0; i < nm.length; i++) h = (h * 31 + nm.charCodeAt(i)) | 0;
+  h = Math.abs(h) >>> 3;
+  return (d._pick = pool[h % pool.length]);
+}
 let allLoaded = false;
 
 // ══════════════════════════════════════════════════════
@@ -300,13 +398,24 @@ const PROP_FILES = [
   'nabid1.png','nabid2.png','nabid3.png','nabid4.png',
   // أجسام جديدة (صور اختيارية — يوجد بديل برمجي لكل منها)
   'star_secret.png','gem.png','magnet.png','shield.png','float_platform.png',
+  // المنصة المتحركة والبلاطة المتلاشية: صورة واحدة لكل عالم (اختيارية — يوجد بديل برمجي)
+  'platform_nature.png','platform_graveyard.png','platform_winter.png','platform_desert.png',
+  'crumble_nature.png','crumble_graveyard.png','crumble_winter.png','crumble_desert.png',
 ];
+// تحميل صورة أكسسوار مع رقم إصدار الملفات (لتفادي نسخة قديمة/خطأ 404 محفوظ في الكاش) ومحاولة ثانية عند الفشل
+function _propLoad(f, attempt) {
+  const base = PROPS_DIR + encodeURIComponent(f);
+  const v = window.ASSETS_VERSION ? '?v=' + window.ASSETS_VERSION : '';
+  const img = new Image();
+  img.onload = () => { if (img.naturalWidth && window._objUrls) window._objUrls.push(base); };   // تُحفظ للتخزين على الجهاز
+  img.onerror = () => { if (attempt < 1) _propLoad(f, attempt + 1); };
+  img.src = base + (attempt ? (v ? v + '&' : '?') + 'r=' + Date.now() : v);
+  PROPS[f] = img;
+}
 function loadProps() {
   for (const f of PROP_FILES) {
-    if (PROPS[f]) continue;
-    const img = new Image();
-    img.src = PROPS_DIR + encodeURIComponent(f);
-    PROPS[f] = img;
+    if (PROPS[f] && (PROPS[f].complete ? PROPS[f].naturalWidth > 0 : true)) continue;
+    _propLoad(f, 0);
   }
 }
 loadProps();
@@ -564,7 +673,7 @@ let   _piAccessToken = null;
 
 // المكافآت — المفاتيح يجب أن تطابق buy('<id>', price) في index.html وكتالوج الخادم
 const PI_REWARDS = {
-  coins:  () => { GS.coins += 1000; updHUD(); },
+  coins:  () => { GS.coins += 3000; updHUD(); },
   speed:  () => { GS.speedBoost = true; updHUD(); },
   hearts: () => { GS.lives = Math.min(99, GS.lives + 20); updHUD(); },      // 0.2π
   level:  () => { unlockNextLevel(); },                                      // 0.2π — المرحلة التالية فقط
@@ -574,7 +683,7 @@ const PI_REWARDS = {
 };
 
 const PI_MEMOS = {
-  coins:  'Super Cowboy: 1000 Coins',
+  coins:  'Super Cowboy: 3000 Coins',
   speed:  'Super Cowboy: Speed Boost',
   hearts: 'Super Cowboy: 20 Hearts',
   level:  'Super Cowboy: Unlock Next Level',
@@ -617,7 +726,7 @@ function onIncompletePaymentFound(payment) {
 }
 
 // ── واجهة الدخول: الشارة + زر "Login with Pi" للضيوف ──
-const BUILD_ID = 'tmx-v11';
+const BUILD_ID = 'stars-v14';
 
 // ينشئ العناصر الناقصة بنفسه حتى لو كان index.html نسخة قديمة
 function _ensureLoginUI() {
@@ -653,7 +762,8 @@ function _updateBuildInfo() {
   if (i) i.textContent = BUILD_ID + ' · v:' + (window.APP_VERSION || '?') + ' · SDK:' + (typeof Pi !== 'undefined' ? 'ok' : 'missing') +
     ' · sandbox:' + _inPiSandbox() + ' · PiBrowser:' + (inPiBrowser ? 'yes' : 'no') +
     ' · init:' + (_piInited ? 'ok' : ('fail' + (_piInitError ? '(' + _piInitError + ')' : ''))) +
-    ' · framed:' + (framed ? 'yes' : 'no');
+    ' · framed:' + (framed ? 'yes' : 'no') +
+    ' · assets:' + ((window._assetsFailed && window._assetsFailed.length) ? ('missing ' + window._assetsFailed.length + ' [' + window._assetsFailed.slice(0, 3).map(p => String(p).replace(/^assets\//, '')).join(', ') + ']') : 'ok');
 }
 
 function _updatePiUI() {
@@ -1011,9 +1121,11 @@ function buildLevelGrid(wid) {
 }
 
 // ── START LEVEL ──
-function startLevel(n) {
+const NEW_LEVEL_MIN_LIVES = 3;   // كل مرحلة جديدة تبدأ بـ 3 قلوب على الأقل (القلوب المشتراة الأكثر من 3 تبقى). ضع 0 لإيقاف ذلك
+function startLevel(n, isRetry) {
   const ld = LEVELS[n];
   if (!ld) return;
+  if (!isRetry && GS.lives < NEW_LEVEL_MIN_LIVES) { GS.lives = NEW_LEVEL_MIN_LIVES; try { saveLocal(); } catch (e) {} }
 
   GS.curLevel = n;
   lvScore = 0; lvCoins = 0; curAmmo = 5;
@@ -1041,6 +1153,7 @@ function startLevel(n) {
   updHUD(); updAmmo();
   showScreen('gameScreen');
   AMB.start(ld.theme);
+  try { ensureObjs(ld.theme); } catch (e) {}
 
   cancelAnimationFrame(raf);
   lastT = performance.now();
@@ -1048,7 +1161,170 @@ function startLevel(n) {
 }
 
 // ── BUILD WORLD ──
+// ══════════════════════════════════════════════════════
+//  النجوم المخفية في الخريطة (بدل الغرف السرية)
+//  - تُملأ الحفر السرية بالأرض وتُحذف الغرف
+//  - 3 نجوم لكل مرحلة تُوضع فوق منصات/مرتفعات يمكن الوصول إليها بالقفز لكنها بعيدة عن مسار الأرض
+//  - الاختيار ثابت (نفس الأماكن عند إعادة المرحلة)
+// ══════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════
+//  تمديد المراحل (×3 تقريباً) — يُنفَّذ مرة واحدة لكل مرحلة قبل بناء العالم
+//  يكرّر المقطع الأوسط (بين عمودين مستويين) دون المساس بملف levels.js
+//  - العدو/الأشواك/الفجوات/المنصات المتحركة/الصناديق تتكرر مع كل نسخة
+//  - الجواهر لا تتكرر (واحدة لكل مرحلة)، والنجوم تُوزَّع على الطول الجديد
+// ══════════════════════════════════════════════════════
+const LEVEL_STRETCH = 1.5;        // طول المرحلة الجديد ≈ الأصلي × 1.5 (كان 3 = نصف الطول الحالي؛ اجعله 1 لإلغاء التمديد)
+function _extendLevel(ld) {
+  if (ld._ext) return;
+  ld._ext = true;
+  if (!(LEVEL_STRETCH > 1) || !ld.cells || !ld.goal) return;
+  const cells = ld.cells, R = ld.rows, C = ld.cols, G = ld.gndRow;
+  // 1) تعبئة الحفر السرية أولاً (تُحذف الغرف لاحقاً على أي حال) حتى لا تتكرر حفر بلا غرف
+  for (const z of (ld.secrets || [])) {
+    if (z.kind === 'pit' || z.kind === 'chamber') {
+      for (let r = z.r; r < z.r + z.h; r++) for (let c = z.c; c < z.c + z.w; c++)
+        if (r >= 0 && r < R && c >= 0 && c < C) cells[r][c] = T.GND;
+      ld.enemies = (ld.enemies || []).filter(e => !(e.c >= z.c && e.c < z.c + z.w && Math.round(e.r) + 1 >= z.r && Math.round(e.r) <= z.r + z.h));
+      ld.items   = (ld.items   || []).filter(it => !(it.c >= z.c && it.c < z.c + z.w && it.r >= z.r && it.r < z.r + z.h));
+    }
+  }
+  ld.secrets = [];
+  // 2) أعمدة "مستوية": أرض كاملة بلا فراغ/منصة/عملة، وبعيدة عن الأشواك والفجوات والمتحركات
+  const sc = ld.startCol || 1, goalC = ld.goal.c;
+  const mk = (en, bk) => c => {
+    if (c < 1 || c >= C - 1) return false;
+    for (let r = 0; r < G; r++) if (cells[r][c] !== T.AIR) return false;
+    for (let r = G; r < R; r++) if (cells[r][c] !== T.GND) return false;
+    if ((ld.spikeGroups || []).some(s => c >= s.c - 2 && c <= s.c + s.w + 1)) return false;
+    if ((ld.movers || []).some(m => c >= m.c - 2 && c <= m.c + m.span + 1)) return false;
+    if ((ld.gaps || []).some(g => c >= g.c - 1 && c <= g.c + g.len)) return false;
+    if ((ld.breakables || []).some(b => Math.abs(b.c - c) <= bk)) return false;
+    if ((ld.enemies || []).some(e => Math.abs(e.c - c) <= en)) return false;
+    return true;
+  };
+  let A = -1, B = -1;
+  for (const [en, bk] of [[7, 2], [3, 1], [0, 0]]) {
+    const ok = mk(en, bk);
+    A = -1; B = -1;
+    for (let c = sc + 14; c < goalC - 12; c++) if (ok(c)) { A = c; break; }
+    for (let c = goalC - 12; c > sc + 14; c--) if (ok(c)) { B = c; break; }
+    if (A >= 0 && B - A >= 24) break;
+    A = -1;
+  }
+  if (A < 0) return;                          // لا مقطع صالح: تبقى المرحلة كما هي
+  const L = B - A;
+  const extras = Math.max(1, Math.min(9, Math.round((LEVEL_STRETCH - 1) * C / L)));
+  const S = extras * L;
+  // 3) الخلايا
+  ld.cells = cells.map(row => {
+    const seg = row.slice(A, B), out = row.slice(0, B);
+    for (let i = 0; i < extras; i++) for (const v of seg) out.push(v);
+    for (let c = B; c < row.length; c++) out.push(row[c]);
+    return out;
+  });
+  // 4) الكيانات: ما قبل B كما هو، ما بعده يُزاح، وما داخل [A,B) يُنسخ
+  const remap = (arr, wOf, keep) => {
+    arr = arr || [];
+    const out = arr.map(o => (o.c < B ? o : Object.assign({}, o, { c: o.c + S })));
+    for (let i = 1; i <= extras; i++)
+      for (const o of arr)
+        if (o.c >= A && o.c + wOf(o) <= B) { const n = keep ? keep(o) : o; if (n) out.push(Object.assign({}, n, { c: o.c + i * L })); }
+    return out;
+  };
+  ld.gaps        = remap(ld.gaps, g => g.len);
+  ld.breakables  = remap(ld.breakables, () => 1, b => (b.hasItem === 'gem' ? Object.assign({}, b, { hasItem: null, hasCoin: true }) : b));
+  ld.decos       = remap(ld.decos, () => 0);
+  ld.enemies     = remap(ld.enemies, () => 1);
+  ld.ammos       = remap(ld.ammos, () => 1);
+  ld.spikeGroups = remap(ld.spikeGroups, s => s.w);
+  ld.movers      = remap(ld.movers, m => m.span, m => Object.assign({}, m));
+  ld.items       = remap(ld.items, () => 1, it => (it.type === 'gem' ? null : it));
+  ld.goal   = Object.assign({}, ld.goal, { c: ld.goal.c + S });
+  if (ld.castle) ld.castle = Object.assign({}, ld.castle, { c: ld.castle.c + S });
+  ld.cols = C + S;
+  ld.time = Math.round((ld.time || 120) * ld.cols / C);
+  ld._extInfo = { A, B, L, extras };
+}
+
+function setupOpenStars(ld) {
+  if (ld._openStars) return;
+  _extendLevel(ld);
+  const cells = ld.cells, R = ld.rows, C = ld.cols, G = ld.gndRow;
+  const solid = v => v === T.GND || v === T.PLT || v === T.CRUMBLE;
+  const cell = (r, c) => (r < 0 || r >= R || c < 0 || c >= C) ? T.GND : cells[r][c];
+  // 1) إزالة الغرف
+  const filled = [];
+  for (const z of (ld.secrets || [])) {
+    if (z.kind === 'pit' || z.kind === 'chamber') {
+      for (let r = z.r; r < z.r + z.h; r++) for (let c = z.c; c < z.c + z.w; c++)
+        if (r >= 0 && r < R && c >= 0 && c < C) cells[r][c] = T.GND;
+      filled.push(z);
+    }
+  }
+  const inFilled = (c, r) => filled.some(z => c >= z.c && c < z.c + z.w && r >= z.r && r < z.r + z.h);
+  ld.enemies = (ld.enemies || []).filter(e => !(inFilled(e.c, Math.round(e.r)) || inFilled(e.c, Math.round(e.r) + 1)));
+  ld.items   = (ld.items   || []).filter(it => !inFilled(it.c, it.r));
+
+  // 2) الأماكن التي يمكن الوقوف عليها + محاكاة وصول من نقطة البداية
+  const sc = ld.startCol || 1;
+  const spots = new Map(), key = (c, r) => c * 100 + r;
+  for (let c = 0; c < C; c++) for (let r = 1; r < R; r++)
+    if (solid(cells[r][c]) && !solid(cells[r - 1][c])) spots.set(key(c, r), [c, r]);
+  for (const m of (ld.movers || [])) for (let c = m.c; c < m.c + m.span; c++) spots.set(key(c, m.r), [c, m.r]);
+  const springAt = (c, r) => cell(r - 1, c) === T.SPRING;
+  const seen = new Set([key(sc, G)]), stack = [[sc, G]];
+  while (stack.length) {
+    const [c, r] = stack.pop();
+    const sp = springAt(c, r);
+    for (let d = -6; d <= 6; d++) {
+      if (!d) continue;
+      for (let r2 = Math.max(1, r - (sp ? 8 : 3)); r2 <= Math.min(R - 1, r + 9); r2++) {
+        const k = key(c + d, r2);
+        if (!spots.has(k) || seen.has(k)) continue;
+        const up = r - r2, ad = Math.abs(d);
+        const ok = sp ? up <= 8 : (ad <= 3 ? up <= 3 : ad === 4 ? up <= 2 : ad === 5 ? up <= 1 : up <= -1);
+        if (ok) { seen.add(k); stack.push([c + d, r2]); }
+      }
+    }
+  }
+
+  // 3) المرشّحون: مكان يقف عليه اللاعب ونجمة على ارتفاع جسمه
+  const goalC = ld.goal ? ld.goal.c : C - 21;
+  const lo = sc + 14, hi = Math.max(lo + 30, goalC - 10);
+  const cand = [];
+  for (const k of seen) {
+    const [c, r] = spots.get(k);
+    if (c < lo || c > hi) continue;
+    const sr = r - 2;
+    if (cell(sr, c) !== T.AIR) continue;
+    let head = true; for (let q = 1; q <= 4; q++) if (solid(cell(r - q, c))) head = false;
+    if (!head) continue;
+    if ((ld.spikeGroups || []).some(sg => c >= sg.c - 1 && c <= sg.c + sg.w && r >= G - 1 && r === G)) continue;
+    if ((ld.enemies || []).some(e => Math.abs(e.c - c) <= 2 && Math.abs(Math.round(e.r) - sr) <= 2)) continue;
+    const elev = G - r;
+    cand.push({ c, r: sr, elev, score: elev * 10 + (((c * 73856093) ^ (r * 19349663)) >>> 0) % 7 });
+  }
+  // 4) نجمة في كل ثلث من المرحلة: الأعلى أولاً (بعيدة عن مسار الأرض)
+  const stars = [], third = (hi - lo) / 3;
+  for (let t = 0; t < 3; t++) {
+    const a = lo + t * third, b = a + third;
+    const inSeg = cand.filter(p => p.c >= a && p.c < b && stars.every(s => Math.abs(s.c - p.c) >= 12));
+    const pool = inSeg.filter(p => p.elev >= 3).length ? inSeg.filter(p => p.elev >= 3)
+               : inSeg.filter(p => p.elev >= 1).length ? inSeg.filter(p => p.elev >= 1) : inSeg;
+    pool.sort((p, q) => q.score - p.score);
+    if (pool.length) { stars.push({ c: pool[0].c, r: pool[0].r }); continue; }
+    // بديل أخير: أي مكان على الأرض في هذا الثلث
+    for (let c = Math.floor(a) + 3; c < b; c += 2) {
+      if (solid(cell(G, c)) && !solid(cell(G - 1, c)) && cell(G - 2, c) === T.AIR) { stars.push({ c, r: G - 2 }); break; }
+    }
+  }
+  ld._openStars = stars;
+  ld._secretsOrig = ld.secrets;
+  ld.secrets = stars.map(s => ({ kind: 'open', c: s.c, r: s.r, w: 1, h: 1, starC: s.c, starR: s.r, coins: [] }));
+}
+
 function buildWorld(ld) {
+  setupOpenStars(ld);
   const { cells, gndRow, cols, rows, breakables, decos, enemies: enDefs, ammos, goal } = ld;
 
   // إرجاع خلايا الأسرار لحالتها الأصلية (قد تكون تغيّرت في محاولة سابقة لنفس المرحلة)
@@ -1090,7 +1366,7 @@ function buildWorld(ld) {
   // Breakable blocks - add to BOTH pickups AND solidTiles
   // Store pickup index reference so bullet hit can find it
   for (const b of breakables) {
-    const bx = b.c * TS, by = b.r * TS;
+    const bx = b.c * TS, by = b.r * TS - BREAK_RAISE;
     const pIdx = pickups.length;
     pickups.push({ x:bx, y:by, w:TS, h:TS, type:'breakable', done:false, hasHeart:b.hasHeart, hasCoin:b.hasCoin, hasItem:b.hasItem, col:b.c, row:b.r });
     solidTiles.push({ x:bx, y:by, w:TS, h:TS, type:T.GND, row:b.r, col:b.c, isBreakable:true, pickupIdx:pIdx });
@@ -1146,7 +1422,7 @@ function buildWorld(ld) {
   secrets = [];
   (ld.secrets || []).forEach((z, i) => {
     // pit: غطاء ترابي يخفي الحفرة | sky/trap: لا غطاء (a=0) — تُكشف بالقفز على المنصة / بالعودة نحو الباب
-    secrets.push({ id:i, kind:z.kind, dir:z.dir || 0, x:z.c*TS, y:z.r*TS, w:z.w*TS, h:z.h*TS, revealed:false,
+    secrets.push({ id:i, kind:z.kind, dir:z.dir || 0, x:z.c*TS, y:z.r*TS, w:z.w*TS, h:z.h*TS, revealed: z.kind === 'open',
                    a: z.kind === 'pit' ? 1 : 0, cv:null, armed:false, d:z,
                    seed:(z.c * 131 + i * 977 + ld.cols) >>> 0, theme:ld.theme });
     pickups.push({ x:z.starC*TS + 2, y:z.starR*TS + 2, w:28, h:28, type:'star', zone:i, done:false });
@@ -1164,8 +1440,82 @@ function buildWorld(ld) {
     return t;
   });
 
-  // Decorative objects (no collision)
-  window._decos = decos;
+  // Decorative objects (no collision) — لا يتجاوز الأكسسوار حافة الحفرة
+  window._decos = _densifyDecos(ld, _fitDecos(ld, decos));
+}
+
+// أكسسوارات إضافية: أنواع أكثر وكثافة أعلى على الأرض الصلبة فقط (بلا تجاوز للحفر، وبلا تداخل مع الأشواك/النابض/البداية/القصر)
+function _densifyDecos(ld, base) {
+  const theme = ld.theme || 'nature', cells = ld.cells, R = ld.rows, C = ld.cols, G = ld.gndRow;
+  const set = OBJ_SETS[theme] || OBJ_SETS.nature;
+  const solidAt = (r, c) => {
+    if (r < 0 || r >= R || c < 0 || c >= C) return false;
+    const v = cells[r][c];
+    return v === T.GND || v === T.PLT || v === T.CRUMBLE;
+  };
+  const used = new Uint8Array(C + 8);
+  const mark = (c, n) => { for (let k = 0; k < n; k++) if (c + k >= 0 && c + k < used.length) used[c + k] = 1; };
+  for (const d of base) mark(d.c | 0, Math.max(1, Math.ceil(_objPick(theme, d)[1] - 0.25)));
+  const sc = ld.startCol || 1, goalC = ld.goal ? ld.goal.c : C - 21;
+  const castleC = ld.castle ? ld.castle.c : goalC + 6;
+  const lo = sc + 4, hi = Math.min(C - 4, goalC - 3);
+  let seed = ((C * 2654435761) ^ ((ld.world | 0) * 97 + 13)) >>> 0;
+  const rnd = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  const blocked = c =>
+    (ld.spikeGroups || []).some(s => c >= s.c - 1 && c <= s.c + s.w) ||
+    cells[G - 1] && cells[G - 1][c] === T.SPRING ||
+    (ld.breakables || []).some(b => b.c === c && b.r >= G - 2);
+  const out = base.slice();
+  let c = lo;
+  while (c < hi) {
+    if (!solidAt(G, c) || used[c] || blocked(c)) { c++; continue; }
+    const pool = rnd() < 0.2 ? set.trees : set.props;
+    const e = pool[Math.floor(rnd() * pool.length)];
+    const cover = Math.max(1, Math.ceil(e[1] - 0.25));
+    let ok = c + cover < hi;
+    for (let k = 0; ok && k < cover; k++) if (!solidAt(G, c + k) || used[c + k] || blocked(c + k)) ok = false;
+    for (let k = -2; ok && k < cover + 2; k++) {                  // لا أكسسوار ضمن بلاطتين من أي فجوة
+      const cc = c + k;
+      if (cc >= 0 && cc < C && !solidAt(G, cc)) ok = false;
+    }
+    if (!ok) { c++; continue; }
+    out.push({ c, r: G - 1, img: e[0], _pick: e });
+    mark(c, cover);
+    c += cover + 2 + Math.floor(rnd() * 5);       // فراغ 2..6 أعمدة قبل الأكسسوار التالي
+  }
+  return out;
+}
+
+// يُبقي كل أكسسوار فوق أرض صلبة بعرضه الكامل: يُزاح لأقرب مقطع أرضي يتّسع له، ويُحذف إن لم يوجد
+function _fitDecos(ld, decos) {
+  const theme = ld.theme || 'nature', cells = ld.cells, R = ld.rows, C = ld.cols;
+  const solidAt = (r, c) => {
+    if (r < 0 || r >= R || c < 0 || c >= C) return false;
+    const v = cells[r][c];
+    return v === T.GND || v === T.PLT || v === T.CRUMBLE;
+  };
+  const out = [];
+  for (const d of (decos || [])) {
+    const row = (d.r | 0) + 1;                                   // صف الأرض الذي يقف عليه الأكسسوار
+    const cover = Math.max(1, Math.ceil(_objPick(theme, d)[1] - 0.25));   // عدد الأعمدة التي يغطيها
+    const c0 = d.c | 0;
+    // أقرب عمود أرضي لموضع الأكسسوار (قد يكون موضعه نفسه فوق حفرة)
+    let seed = -1;
+    for (let k = 0; k <= 12 && seed < 0; k++) {
+      if (solidAt(row, c0 + k)) seed = c0 + k;
+      else if (solidAt(row, c0 - k)) seed = c0 - k;
+    }
+    if (seed < 0) continue;
+    let a = seed, b = seed;
+    while (solidAt(row, a - 1)) a--;
+    while (solidAt(row, b + 1)) b++;
+    const GAP_MARGIN = 2;                                        // لا أكسسوار ضمن بلاطتين من حافة أي فجوة
+    const lo = a + (a > 0 ? GAP_MARGIN : 0), hi = b - (b < C - 1 ? GAP_MARGIN : 0);
+    if (hi - lo + 1 < cover) continue;                           // لا مكان يتّسع له بعيداً عن الفجوات: يُحذف
+    const nc = Math.max(lo, Math.min(c0, hi - cover + 1));       // أقل إزاحة ممكنة
+    out.push(nc === d.c ? d : Object.assign({}, d, { c: nc }));
+  }
+  return out;
 }
 
 function getSpriteData(type) {
@@ -1624,6 +1974,7 @@ function updCrumbles(dt) {
 function updEnemies(dt) {
   for (const e of enemies) {
     if (e.dead) continue;
+    if (player && Math.abs(e.x - player.x) > 1500) continue;   // بعيد جداً عن اللاعب: لا حاجة لمحاكاته (المراحل أطول الآن)
 
     // Animation
     e.ft += dt;
@@ -1801,6 +2152,8 @@ function updCamera() {
 }
 
 // ── RENDER ──
+const WORLD_DIM = { nature: 0.15, desert: 0.15 };   // نسبة التعتيم لكل عالم (0.15 = 15%)
+
 function render() {
   const W = parseInt(canvas.style.width)  || canvas.width;
   const H = parseInt(canvas.style.height) || canvas.height;
@@ -1812,6 +2165,8 @@ function render() {
   drawDecos();
   drawRoomBacks();
   drawTiles();
+  const _dim = WORLD_DIM[LEVELS[GS.curLevel]?.theme] || 0;
+  if (_dim) { ctx.fillStyle = 'rgba(0,0,0,' + _dim + ')'; ctx.fillRect(camera.x - 2, camera.y - 2, W + 4, H + 4); }
   drawMovers();
   drawPickups();
   drawEnemies();
@@ -1866,57 +2221,14 @@ function drawBackground() {
 function drawPits() {
   const ld = LEVELS[GS.curLevel];
   if (!ld || !ld.gaps) return;
-
-  const theme    = ld.theme || 'nature';
-  const bgImg    = UI_IMGS['bg_' + theme];
-  const mapH     = ld.rows * TS;
-  const pitTop   = ld.gndRow * TS - camera.y;   // يتبع الكاميرا عند نزولها قرب القصر
-  const pitH     = mapH - ld.gndRow * TS + TS * 4;
-
   const W = parseInt(canvas.style.width)  || canvas.width;
-  const H = parseInt(canvas.style.height) || canvas.height;
-
+  const pitTop = ld.gndRow * TS - camera.y;
+  const pitH   = ld.rows * TS - ld.gndRow * TS + TS * 4;
   for (const gap of ld.gaps) {
-    const gx  = gap.c * TS - camera.x;  // موقع الفجوة على الشاشة
-    const gw  = gap.len * TS;
-
-    if (gx + gw < 0 || gx > W) continue; // خارج الشاشة
-
-    if (imgOK(bgImg)) {
-      // ── قص الجزء السفلي من الخلفية (50% أسفل) ولصقه مكان الفجوة ──
-      // نأخذ الشريحة السفلية من الخلفية التي تتوافق مع موقع الفجوة أفقياً
-      const srcX  = (gx / W) * bgImg.naturalWidth;
-      const srcW  = (gw / W) * bgImg.naturalWidth;
-      // نأخذ النصف الأسفل من الخلفية (يشبه ما تحت الأرض)
-      const srcY  = bgImg.naturalHeight * 0.55;
-      const srcH  = bgImg.naturalHeight * 0.45;
-
-      // نرسمه في مكان الفجوة على الشاشة (بإحداثيات الشاشة لأننا خارج translate)
-      ctx.drawImage(bgImg,
-        Math.max(0, srcX), srcY,
-        Math.min(srcW, bgImg.naturalWidth - Math.max(0, srcX)), srcH,
-        gx, pitTop, gw, pitH
-      );
-
-      // تأثير تعتيم خفيف في أسفل الفجوة لإيهام العمق
-      const depthGrad = ctx.createLinearGradient(gx, pitTop, gx, pitTop + pitH);
-      depthGrad.addColorStop(0, 'rgba(0,0,0,0)');
-      depthGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
-      ctx.fillStyle = depthGrad;
-      ctx.fillRect(gx, pitTop, gw, pitH);
-
-    } else {
-      // Fallback: لون الخلفية الاحتياطي بدل السواد
-      const fallbacks = {
-        nature: '#6BC5F0', graveyard: '#1a0a2e',
-        winter: '#b0d4f1', desert: '#E8923A',
-      };
-      ctx.fillStyle = fallbacks[theme] || '#6BC5F0';
-      ctx.fillRect(gx, pitTop, gw, pitH);
-    }
-
-    // ── صورة Picsa8 فوق الفجوة (اختيارية) ──
-    const picsaImg = UI_IMGS['picsa8'];
+    const gx = gap.c * TS - camera.x, gw = gap.len * TS;
+    if (gx + gw < 0 || gx > W) continue;
+    // الفجوة لا تحتوي بلاطاً، فتظهر الخلفية الأصلية من خلالها كاملة وبنفس مقياسها (لا نسخة مقصوصة)
+    const picsaImg = UI_IMGS['picsa8'];    // صورة اختيارية فوق الفجوة (كما كانت)
     if (imgOK(picsaImg)) {
       const ph = Math.round(picsaImg.naturalHeight / picsaImg.naturalWidth * gw);
       ctx.drawImage(picsaImg, gx, pitTop - ph + TS * 0.3, gw, ph);
@@ -1926,6 +2238,128 @@ function drawPits() {
 
 // ── DRAW TILES ──
 // Uses proper tile variant IDs from Tile.svg analysis
+// ══════════════════════════════════════════════════════
+//  إعدادات البلاط (عدّل الأرقام هنا فقط)
+// ══════════════════════════════════════════════════════
+const TILE_SCALE_GND = 1.15;   // تكبير رسم بلاط الأرض بنسبة 15% (التصادم يبقى بحجم TS)
+const TILE_SCALE_PLT = 1.15;   // تكبير رسم المنصات بنسبة 15%
+const PLAYER_SINK    = 10;     // إنزال رسم الشخصية (بكسل) لتلامس العشب ولا تبدو طافية
+const BREAK_RAISE    = 48;     // رفع الكتل المتحطمة (بكسل) لتمرّ الشخصية تحتها
+
+// بلاطات إضافية تُقصّ من اللوحة وتوضع بجانب بقية بلاط كل عالم (نفس المجلد):
+//  1A 1B 1C = بدائل العشب العلوي (tile 3)   |   2A 2B 2C 3A 3B = بدائل التراب الداخلي
+// إن لم يوجد الملف تُتجاهل بصمت ويُستعمل البلاط الأصلي.
+const EXTRA_TOP  = ['1A', '1B', '1C'];
+const EXTRA_FILL = ['2A', '2B', '2C', '3A', '3B'];
+const _extraTiles = {};        // theme -> { key: Image | false }
+function _tileDir(theme) {
+  // نستنتج مجلد بلاط العالم من أول صورة بلاط محمّلة فعلاً
+  const imgs = TILE_IMGS[theme];
+  if (imgs) for (const k in imgs) {
+    const im = imgs[k];
+    if (im && typeof im.src === 'string' && im.src) {
+      const u = im.src.split('?')[0];
+      return u.slice(0, u.lastIndexOf('/') + 1);
+    }
+  }
+  return 'assets/tiles/' + theme + '/';
+}
+function _extraTile(theme, key) {
+  const box = _extraTiles[theme] || (_extraTiles[theme] = {});
+  if (box[key] !== undefined) return box[key] || null;
+  box[key] = false;                                   // لا نكرر المحاولة إن فشل
+  try {
+    const img = new Image();
+    img.onload  = () => { box[key] = img; };
+    img.onerror = () => { box[key] = false; };
+    const v = (typeof window !== 'undefined' && window.ASSETS_VERSION) ? '?v=' + window.ASSETS_VERSION : '';
+    img.src = _tileDir(theme) + key + '.png' + v;
+  } catch (e) {}
+  return null;
+}
+// يختار صورة من (الأصلية + الإضافية المحمّلة) بشكل ثابت لكل خلية
+function _pickTile(theme, baseImgs, extraKeys, c, r) {
+  const pool = [];
+  for (const im of baseImgs) if (imgOK(im)) pool.push(im);
+  for (const k of extraKeys) { const im = _extraTile(theme, k); if (imgOK(im)) pool.push(im); }
+  if (!pool.length) return baseImgs[0];
+  if (pool.length === 1) return pool[0];
+  const h = (((c * 73856093) ^ (r * 19349663)) >>> 0) % pool.length;
+  return pool[h];
+}
+// ══════════════════════════════════════════════════════
+//  صور الحواف المخصصة + بلاط السطح المتحرك (اختيارية — تُوضع في نفس مجلد بلاط كل عالم)
+//  إن لم يوجد الملف يُستعمل البلاط القديم تلقائياً.
+// ══════════════════════════════════════════════════════
+const EDGE_FILES = {
+  gnd_top_left:  'edge_top_left',    // زاوية علوية يسرى (بداية الأرض بعد فجوة)
+  gnd_top_right: 'edge_top_right',   // زاوية علوية يمنى (نهاية الأرض قبل فجوة)
+  gnd_mid_left:  'edge_mid_left',    // جدار ترابي أيسر
+  gnd_mid_right: 'edge_mid_right',   // جدار ترابي أيمن
+  gnd_bot_left:  'edge_bot_left',    // زاوية سفلية يسرى
+  gnd_bot_right: 'edge_bot_right',   // زاوية سفلية يمنى
+  gnd_bot_mid:   'edge_bot_mid',     // حافة سفلية وسطى
+  plat_left:     'edge_plat_left',   // طرف المنصة الأيسر
+  plat_right:    'edge_plat_right',  // طرف المنصة الأيمن
+  plat_single:   'edge_plat_single', // منصة من بلاطة واحدة
+};
+const TOP_ANIM    = ['top_anim_1', 'top_anim_2', 'top_anim_3', 'top_anim_4'];   // 4 إطارات لسطح الأرض المتحرك
+const TOP_ANIM_MS = 220;                                                          // مدة كل إطار بالمللي ثانية
+function _edgeImg(theme, slot) {
+  const f = EDGE_FILES[slot];
+  if (!f) return null;
+  const im = _extraTile(theme, f);
+  return imgOK(im) ? im : null;
+}
+function _topAnimImg(theme, c) {
+  const list = [];
+  for (const k of TOP_ANIM) { const im = _extraTile(theme, k); if (imgOK(im)) list.push(im); }
+  if (list.length < 2) return list[0] || null;
+  const step = Math.floor(performance.now() / TOP_ANIM_MS + c * 0.4);   // c*0.4: تموج يمر على الأعمدة بدل حركة موحّدة
+  return list[((step % list.length) + list.length) % list.length];
+}
+// رسم بلاطة أكبر قليلاً: مركّزة أفقياً ومثبّتة من الأعلى (سطح المشي لا يتحرك)
+// يرسم الشريحة التي تغطيها الخلية من نسخة مكررة للصورة بنسبتها الطبيعية (ارتفاع النسخة = عمق الأرض)
+// حدود الشرائح تُحسب مباشرة (بلا حلقات while عائمة) فلا يمكن أن تعلق اللعبة
+function _drawNaturalFill(img, t, ld) {
+  const dispH = Math.max(4, (ld.rows - ld.gndRow - 1) || 4) * TS;
+  const dispW = dispH * img.naturalWidth / img.naturalHeight;
+  if (!(dispW > 1) || !isFinite(dispW) || !isFinite(dispH)) {            // بيانات غير صالحة: رسم عادي
+    ctx.drawImage(img, t.x, t.y, t.w, t.h); return;
+  }
+  const oy = (ld.gndRow + 1) * TS || 0;
+  const kx = img.naturalWidth / dispW, ky = img.naturalHeight / dispH;
+  const EPS = 0.6;                                                       // تراكب صغير يمنع الخطوط الرفيعة
+  const x0 = t.x, x1 = t.x + t.w, y0 = t.y, y1 = t.y + t.h;
+  const ky0 = Math.floor((y0 - oy) / dispH), kx0 = Math.floor(x0 / dispW);
+  for (let sy = ky0, n = 0; n < 6 && oy + sy * dispH < y1; sy++, n++) {
+    const ya = Math.max(y0, oy + sy * dispH), yb = Math.min(y1, oy + (sy + 1) * dispH);
+    if (yb - ya < 1e-3) continue;
+    for (let sx = kx0, m = 0; m < 6 && sx * dispW < x1; sx++, m++) {
+      const xa = Math.max(x0, sx * dispW), xb = Math.min(x1, (sx + 1) * dispW);
+      if (xb - xa < 1e-3) continue;
+      ctx.drawImage(img, (xa - sx * dispW) * kx, (ya - oy - sy * dispH) * ky, (xb - xa) * kx, (yb - ya) * ky,
+                    xa, ya, xb - xa + EPS, yb - ya + EPS);
+    }
+  }
+}
+
+function _drawTileScaled(img, t, scale) {
+  // تُرسم الصورة كاملة دائماً (بلا قص). الحجم يُحسب تلقائياً من حجم الخلية × scale:
+  //  - صورة مربعة (تقريباً): تُمدّ إلى حجم الخلية المكبّرة
+  //  - صورة غير مربعة: تحافظ على نسبتها (بلا تشويه) وتغطي الخلية المكبّرة بالكامل
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  let dw = t.w * scale, dh = t.h * scale;
+  if (iw > 0 && ih > 0) {
+    const asp = (ih / iw) / (t.h / t.w);          // 1 = نفس نسبة الخلية
+    if (Math.abs(asp - 1) > 0.12) {
+      const k = Math.max(dw / iw, dh / ih);
+      dw = iw * k; dh = ih * k;
+    }
+  }
+  ctx.drawImage(img, t.x - (dw - t.w) / 2, t.y, dw, dh);   // مركّزة أفقياً ومثبّتة من الأعلى
+}
+
 function drawTiles() {
   const theme = LEVELS[GS.curLevel]?.theme || 'nature';
   const tImgs = TILE_IMGS[theme] || {};
@@ -1943,6 +2377,10 @@ function drawTiles() {
       ctx.globalAlpha = alpha;
     }
 
+    if (t.crumble) {                                   // البلاطة التي تختفي: صورة واحدة لكل عالم crumble_<world>.png
+      const cImg = PROPS['crumble_' + theme + '.png'];
+      if (imgOK(cImg)) { ctx.drawImage(cImg, t.x, t.y, t.w, t.h); ctx.globalAlpha = 1; continue; }
+    }
     if (t.isBreakable) {
       const bkImg = tImgs[TV.breakable] || tImgs['bone1'] || tImgs[16];
       if (imgOK(bkImg)) {
@@ -1973,9 +2411,11 @@ function drawTiles() {
       else if (!hasRight)        imgKey = TV.plat_right; // حافة يمنى → 13
       else                       imgKey = TV.plat_mid;   // وسط → 14
 
-      const platImg = tImgs[imgKey];
+      let platImg = tImgs[imgKey];
+      const _pe = _edgeImg(theme, (!hasLeft && !hasRight) ? 'plat_single' : !hasLeft ? 'plat_left' : !hasRight ? 'plat_right' : '');
+      if (_pe) platImg = _pe;
       if (imgOK(platImg)) {
-        ctx.drawImage(platImg, t.x, t.y, TS, TS);
+        _drawTileScaled(platImg, t, TILE_SCALE_PLT);
       } else {
         const pc = { nature:['#4CAF50','#5D4037'], graveyard:['#607D8B','#263238'], winter:['#5C6BC0','#1A237E'], desert:['#FFA726','#5D4037'] }[theme] || ['#4CAF50','#5D4037'];
         ctx.fillStyle = pc[1]; ctx.fillRect(t.x, t.y, TS, TS);
@@ -1985,7 +2425,7 @@ function drawTiles() {
       const ld = LEVELS[GS.curLevel];
       const tileId = getTileVariant(t, ld, TV, tImgs, theme);
       if (imgOK(tileId.img)) {
-        ctx.drawImage(tileId.img, t.x, t.y, t.w, t.h);
+        _drawTileScaled(tileId.img, t, TILE_SCALE_GND);
       } else {
         drawFallbackTile(t, theme, TV);
       }
@@ -2011,7 +2451,7 @@ function getTileVariant(tile, ld, TV, tImgs, theme) {
 
   const isGnd = v => v === T.GND || v === T.PLT;  // PLT counts as solid for neighbor checks
 
-  let variantId;
+  let variantId, slot = '';
   if (tile.type === T.PLT) {
     // Platform: check left/right neighbors
     if (!isGnd(left) && !isGnd(right)) variantId = TV.plat_mid; // single tile
@@ -2025,18 +2465,28 @@ function getTileVariant(tile, ld, TV, tImgs, theme) {
     const lftExposed = !isGnd(left);
     const rgtExposed = !isGnd(right);
 
-    if (topExposed && lftExposed && !rgtExposed) variantId = TV.gnd_top_left;
-    else if (topExposed && rgtExposed && !lftExposed) variantId = TV.gnd_top_right;
-    else if (topExposed) variantId = TV.gnd_top_mid;
-    else if (botExposed && lftExposed) variantId = TV.gnd_bot_left;
-    else if (botExposed && rgtExposed) variantId = TV.gnd_bot_right;
-    else if (botExposed) variantId = TV.gnd_bot_mid;
-    else if (lftExposed) variantId = TV.gnd_mid_left;
-    else if (rgtExposed) variantId = TV.gnd_mid_right;
-    else variantId = TV.gnd_mid_fill;
+    if (topExposed && lftExposed && !rgtExposed) slot = 'gnd_top_left';
+    else if (topExposed && rgtExposed && !lftExposed) slot = 'gnd_top_right';
+    else if (topExposed) slot = 'gnd_top_mid';
+    else if (botExposed && lftExposed) slot = 'gnd_bot_left';
+    else if (botExposed && rgtExposed) slot = 'gnd_bot_right';
+    else if (botExposed) slot = 'gnd_bot_mid';
+    else if (lftExposed) slot = 'gnd_mid_left';
+    else if (rgtExposed) slot = 'gnd_mid_right';
+    else slot = 'gnd_mid_fill';
+    variantId = TV[slot];
   }
 
-  return { img: tImgs[variantId], id: variantId };
+  let img = tImgs[variantId];
+  if (tile.type !== T.PLT) {
+    const _edge = _edgeImg(theme, slot);
+    if (_edge) img = _edge;                                   // صورة حافة مخصصة إن وُجدت
+    else if (slot === 'gnd_top_mid')
+      img = _topAnimImg(theme, c) || _pickTile(theme, [tImgs[TV.gnd_top_mid]], EXTRA_TOP, c, r);
+    else if (slot === 'gnd_mid_fill')
+      img = _pickTile(theme, [tImgs[TV.gnd_mid_fill], tImgs[TV.gnd_mid_left], tImgs[TV.gnd_mid_right]], EXTRA_FILL, c, r);
+  }
+  return { img, id: variantId };
 }
 
 function drawFallbackTile(t, theme, TV) {
@@ -2216,7 +2666,7 @@ function drawDecos() {
   const decos = window._decos || [];
   const ld    = LEVELS[GS.curLevel];
   const theme = ld?.theme || 'nature';
-  const objs  = OBJ_IMGS[theme] || {};
+  const box   = ensureObjs(theme);
   const W = parseInt(canvas.style.width)||canvas.width;
 
   for (const d of decos) {
@@ -2227,17 +2677,58 @@ function drawDecos() {
     // تقليم: لا نرسم خارج الشاشة
     if (wx - camera.x > W + TS*2 || wx - camera.x < -TS*2) continue;
 
-    const img = objs[d.img];
-    if (imgOK(img)) {
-      const isTree = /^(Tree_1|Tree_2|Tree_3|Tree|Dead_Tree)\.png$/.test(d.img);
-      const dw = TS * (isTree ? 4.8 : 2.4);
-      const dh = (img.naturalHeight / img.naturalWidth) * dw;
-      ctx.drawImage(img, wx, wy + TS - dh, dw, dh);
+    let pk = _objPick(theme, d);
+    let ent = box[pk[0]];
+    if (ent && ent.failed && !ent.ok) {            // الصورة غير موجودة في المجلد: استبدلها بأكسسوار موجود من نفس الفئة
+      if (d._alt === undefined) {
+        const set = OBJ_SETS[theme] || OBJ_SETS.nature;
+        const pool = set.trees.includes(pk) ? set.trees : set.props;
+        d._alt = pool.find(e => box[e[0]] && box[e[0]].ok) || null;
+      }
+      if (d._alt) { pk = d._alt; ent = box[pk[0]]; }
+    }
+    if (ent && ent.ok) {
+      const dw = TS * pk[1];
+      const dh = (ent.h / ent.w) * dw;
+      ctx.drawImage(ent.el, wx, wy + TS - dh + 3, dw, dh);
     }
   }
 }
 
 // ── DRAW ENEMIES ──
+// فراغ شفاف أسفل إطارات الأعداء الأرضيين (نسبة من ارتفاع الإطار) — يُقاس تلقائياً من الصورة
+// لتعديل يدوي: ENEMY_FOOT_PAD.snail1 = 0.12 مثلاً
+const ENEMY_FOOT_PAD = {};
+const ENEMY_SINK = 5;   // بكسل إضافية تُنزل الأعداء الأرضيين داخل العشب (زد الرقم إن بقي الحلزون مرتفعاً قليلاً)
+const _footPadCache = {};
+function _enemyFootPad(type, img) {
+  if (ENEMY_FOOT_PAD[type] !== undefined) return ENEMY_FOOT_PAD[type];
+  if (_footPadCache[type] !== undefined) return _footPadCache[type];
+  if (!/^(snail|tuca)/.test(type)) return (_footPadCache[type] = 0);
+  let pad = 0;
+  try {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0);
+    // أدنى بكسل ظاهر في كل إطار؛ نأخذ "الوسيط" لأن إطارات الموت تنزل أخفض وكانت تلغي الفراغ فيبقى الحلزون طافياً
+    let fh = 60; const lows = [];
+    for (let f = 0, n = getEnemyFrameCount(type); f < n; f++) {
+      const fr = getEnemyFrame({ type, frame: f }); fh = fr.fh;
+      const d = x.getImageData(fr.sx, fr.sy, fr.fw, fr.fh).data;
+      let low = 0;
+      scan: for (let yy = fr.fh - 1; yy >= 0; yy--)
+        for (let xx = 0; xx < fr.fw; xx++)
+          if (d[(yy * fr.fw + xx) * 4 + 3] > 40) { low = yy; break scan; }
+      lows.push(low);
+    }
+    lows.sort((a, b) => a - b);
+    const lowest = lows.length ? lows[Math.floor(lows.length / 2)] : fh - 1;
+    pad = Math.max(0, Math.min(0.4, (fh - 1 - lowest) / fh));
+  } catch (e) { pad = /^snail/.test(type) ? 0.13 : 0; }   // تعذّرت قراءة الصورة: قيمة مقاسة من صورة الحلزون     // صورة من نطاق آخر: لا يمكن قراءتها => استخدم ENEMY_FOOT_PAD
+  return (_footPadCache[type] = pad);
+}
+
 function drawEnemies() {
   for (const e of enemies) {
     if (e.dead) continue;
@@ -2266,13 +2757,14 @@ function drawEnemies() {
 
     // Calculate sprite sheet frame
     const frameData = getEnemyFrame(e);
+    const dy = _enemyFootPad(e.type, img) * e.h + (e.fly ? 0 : ENEMY_SINK);     // ينزل الرسم ليلامس الأرض
     ctx.save();
     if (e.dir < 0) {
-      ctx.translate(e.x + e.w, e.y);
+      ctx.translate(e.x + e.w, e.y + dy);
       ctx.scale(-1, 1);
       ctx.drawImage(img, frameData.sx, frameData.sy, frameData.fw, frameData.fh, 0, 0, e.w, e.h);
     } else {
-      ctx.drawImage(img, frameData.sx, frameData.sy, frameData.fw, frameData.fh, e.x, e.y, e.w, e.h);
+      ctx.drawImage(img, frameData.sx, frameData.sy, frameData.fw, frameData.fh, e.x, e.y + dy, e.w, e.h);
     }
     ctx.restore();
   }
@@ -2366,12 +2858,13 @@ function _drawPlayerInner() {
   if (imgOK(img)) {
     // Character sprites are 641×542, we draw at player size
     ctx.save();
+    const py = player.y + PLAYER_SINK;   // أنزل قليلاً حتى تلامس الأقدام العشب
     if (player.dir < 0) {
-      ctx.translate(player.x + player.w, player.y);
+      ctx.translate(player.x + player.w, py);
       ctx.scale(-1, 1);
       ctx.drawImage(img, 0, 0, player.w, player.h);
     } else {
-      ctx.drawImage(img, player.x, player.y, player.w, player.h);
+      ctx.drawImage(img, player.x, py, player.w, player.h);
     }
     ctx.restore();
   } else {
@@ -2627,14 +3120,14 @@ function drawRoomBacks() {
   }
 }
 
-// ── المنصات المتحركة: صورة float_platform.png أو رسم برمجي ──
+// ── المنصات المتحركة: صورة واحدة لكل عالم platform_<world>.png (أو float_platform.png) أو رسم برمجي ──
 function drawMovers() {
   const W = parseInt(canvas.style.width) || canvas.width;
   const theme = LEVELS[GS.curLevel]?.theme || 'nature';
   const pc = { nature:['#8D6E63','#4CAF50'], graveyard:['#546E7A','#7E57C2'], winter:['#90CAF9','#E3F2FD'], desert:['#D7A86E','#FF8F00'] }[theme];
   for (const m of movers) {
     if (m.x - camera.x > W + 40 || m.x + m.w - camera.x < -40) continue;
-    const img = PROPS['float_platform.png'];
+    const img = imgOK(PROPS['platform_' + theme + '.png']) ? PROPS['platform_' + theme + '.png'] : PROPS['float_platform.png'];
     if (imgOK(img)) {
       ctx.drawImage(img, m.x, m.y - 2, m.w, Math.round(m.w * img.naturalHeight / img.naturalWidth));
     } else {
@@ -2650,7 +3143,33 @@ function drawMovers() {
 
 const ITEM_FILES = { star:'star_secret.png', gem:'gem.png', magnet:'magnet.png', shield:'shield.png' };
 function _poly(pts) { ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); }
+// النجوم السرية: مخفية تماماً، وتظهر فقط عند الاقتراب منها (مع لمعة خفيفة نادرة كتلميح من بعيد)
+const STAR_REVEAL_R = 90;    // ضمن هذه المسافة (بكسل) تظهر النجمة كاملة
+const STAR_FADE_R   = 135;   // بين الرقمين تظهر تدريجياً
+const STAR_HINT_R   = 210;   // لمعة صغيرة متقطعة فقط
 function drawItemPick(p) {
+  if (p.type !== 'star') { _drawItemPickRaw(p); return; }
+  const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+  const d = Math.hypot(player.x + player.w / 2 - cx, player.y + player.h / 2 - cy);
+  if (d > STAR_HINT_R) return;
+  if (d > STAR_FADE_R) {
+    const t = (Date.now() + p.x * 7) % 3200;                    // لمعة قصيرة كل ~3 ثوانٍ
+    if (t > 260) return;
+    const k = Math.sin(t / 260 * Math.PI);
+    ctx.save(); ctx.globalAlpha = 0.55 * k; ctx.fillStyle = '#FFF59D';
+    const r = 2 + 3 * k;
+    ctx.beginPath(); ctx.moveTo(cx, cy - r * 2); ctx.lineTo(cx + r * 0.5, cy - r * 0.5); ctx.lineTo(cx + r * 2, cy);
+    ctx.lineTo(cx + r * 0.5, cy + r * 0.5); ctx.lineTo(cx, cy + r * 2); ctx.lineTo(cx - r * 0.5, cy + r * 0.5);
+    ctx.lineTo(cx - r * 2, cy); ctx.lineTo(cx - r * 0.5, cy - r * 0.5); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    return;
+  }
+  ctx.save();
+  ctx.globalAlpha = d <= STAR_REVEAL_R ? 1 : 1 - (d - STAR_REVEAL_R) / (STAR_FADE_R - STAR_REVEAL_R);
+  _drawItemPickRaw(p);
+  ctx.restore();
+}
+function _drawItemPickRaw(p) {
   const tm = Date.now() * 0.004 + p.x * 0.02;
   const cx = p.x + p.w / 2, cy = p.y + p.h / 2 + Math.sin(tm) * 3;
   const sz = p.type === 'star' ? 40 : 32;
@@ -2887,17 +3406,17 @@ function retryLvl() {
   clearInterval(timerInt);
   gameStatus = 'idle';
   if (GS.lives < 1) GS.lives = 3;   // أعد 3 قلوب فقط إذا نفدت (يحافظ على القلوب المشتراة)
-  setTimeout(() => startLevel(GS.curLevel), 50);
+  setTimeout(() => startLevel(GS.curLevel, true), 50);
 }
 
-// ── REVIVE (100 coins) ──
+// ── REVIVE (300 coins) ──
 function revivePlayer() {
-  const REVIVE_COST = 100;
+  const REVIVE_COST = 300;
   if (GS.coins < REVIVE_COST) {
     const btn = document.getElementById('reviveBtn');
     if (btn) {
       btn.style.background = '#FF4444';
-      btn.querySelector('span').textContent = '🪙 100 ✖';
+      btn.querySelector('span').textContent = '🪙 300 ✖';
       setTimeout(() => {
         btn.style.background = '';
         btn.querySelector('span').textContent = i18n('revive');
@@ -3104,7 +3623,7 @@ function _saveAssetsOnDevice() {
   try {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();   // اطلب عدم حذفها تلقائياً
     if (!('serviceWorker' in navigator)) return;
-    const urls = Assets.log().concat(SFX.urls());
+    const urls = Assets.log().concat(SFX.urls(), window._objUrls || []);
     navigator.serviceWorker.ready.then(reg => {
       if (reg.active) reg.active.postMessage({ type: 'precache', urls, version: window.ASSETS_VERSION || '' });
     }).catch(() => {});
@@ -3166,7 +3685,19 @@ function _showLoadReport(failed) {
     const box = document.getElementById('ldReport');
     const list = document.getElementById('ldReportList');
     const title = document.getElementById('ldReportTitle');
-    if (!box) return resolve('continue');
+    if (!box || !list || !title) {   // index.html قديم بلا عناصر التقرير → ننشئ نافذة بسيطة
+      const o = document.createElement('div');
+      o.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.88);color:#fff;padding:18px;font:12px/1.5 monospace;overflow:auto;';
+      o.innerHTML = '<div style="font-size:14px;margin-bottom:8px">⚠️ ' + failed.length + ' game file(s) could not be loaded:</div>' +
+        '<pre style="white-space:pre-wrap;word-break:break-all"></pre>' +
+        '<button id="_lr1" style="margin:10px 8px 0 0;padding:8px 14px">Retry</button><button id="_lr2" style="padding:8px 14px">Continue</button>';
+      o.querySelector('pre').textContent = failed.slice(0, 30).join('\n') + (failed.length > 30 ? '\n… +' + (failed.length - 30) + ' more' : '');
+      document.body.appendChild(o);
+      const fin = w => { o.remove(); resolve(w); };
+      o.querySelector('#_lr1').onclick = () => fin('retry');
+      o.querySelector('#_lr2').onclick = () => fin('continue');
+      return;
+    }
     title.textContent = '⚠️ ' + failed.length + ' game file(s) could not be loaded:';
     list.textContent = failed.slice(0, 14).join('\n') + (failed.length > 14 ? '\n… +' + (failed.length - 14) + ' more' : '');
     box.style.display = 'block';
@@ -3193,16 +3724,10 @@ async function _boot() {
     ldProgress(10, 'Retrying...');
     res = await Assets.loadAll(onProgress);
   }
-  while (res.failed.length) {
-    console.warn('[Assets] missing files:', res.failed);
-    // صور البلاطات الناقصة لها بديل مرسوم برمجياً → لا نوقف اللاعب بسببها
-    const important = res.failed.filter(f => !/(^|\/)assets\/tiles\//.test(f));
-    if (!important.length) break;
-    const choice = await _showLoadReport(important);
-    if (choice === 'continue') break;
-    ldProgress(10, 'Retrying...');
-    res = await Assets.loadAll(onProgress);
-  }
+  if (res.failed.length) console.warn('[Assets] missing files:', res.failed);   // لا نافذة خطأ: نكمل التشغيل مباشرة
+
+  window._assetsFailed = (res.failed || []).slice();
+  if (window._assetsFailed.length) console.warn('[Assets] still missing after load:', window._assetsFailed);
 
   ldProgress(93, 'Loading sounds...');
   try { await SFX.preloadAll(); } catch(e) {}

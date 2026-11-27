@@ -87,7 +87,10 @@ const Assets = (() => {
     for (const [world, count] of Object.entries(tiles)) {
       TILE_IMGS[world] = {};
       for (let i = 1; i <= count; i++)
-        add(`assets/tiles/${world}/${i}.png`, img => { TILE_IMGS[world][i] = img; }, true);
+        add([`assets/tiles/${world}/${i}.png`,
+             `assets/tiles/${world[0].toUpperCase() + world.slice(1)}/${i}.png`,
+             `assets/tiles/${world}/${i}.PNG`],
+            img => { TILE_IMGS[world][i] = img; }, false);   // اختيارية: إن غابت تُرسم بلاطات بديلة داخل اللعبة دون نافذة خطأ
     }
     for (let b = 1; b <= 4; b++)
       add(`assets/tiles/graveyard/bone${b}.png`, img => { TILE_IMGS.graveyard['bone' + b] = img; }, false);
@@ -122,22 +125,8 @@ const Assets = (() => {
          'assets/buttons/banner_win(Copy).png','assets/ui/banner_win(Copy).png'],
         img => { UI_IMGS.picsa8 = img; }, false);
 
-    // Decorations (names from every version of the game; missing ones are simply skipped)
-    const deco = {
-      nature:    ['Tree_1.png','Tree_2.png','Tree_3.png','Bush__1_.png','Bush__2_.png','Bush__3_.png',
-                  'Mushroom_1.png','Mushroom_2.png','Stone.png','Crate.png'],
-      graveyard: ['Tree.png','Dead_Tree.png','TombStone__1_.png','TombStone__2_.png','TombStone__3_.png',
-                  'DeadBush.png','Bush__1_.png','Bush__2_.png','Crate.png','Bone.png','Skull.png',
-                  'Candle.png','Skeleton.png'],
-      winter:    ['Tree_1.png','Tree_2.png','Tree_3.png','SnowMan.png','Stone.png','IceBox.png',
-                  'IcePillar.png','Snowflake.png','Crystal.png','Crate.png'],
-      desert:    ['Tree.png','Dead_Tree.png','Cactus__1_.png','Cactus__2_.png','Cactus__3_.png',
-                  'Bush__1_.png','Bush__2_.png','Stone.png','Stone_2.png','Crate.png'],
-    };
-    for (const [world, items] of Object.entries(deco)) {
-      OBJ_IMGS[world] = {};
-      items.forEach(o => add(`assets/objects/${world}/${o}`, img => { OBJ_IMGS[world][o] = img; }, false));
-    }
+    // Decorations: now loaded by game.js (ensureObjs) from assets/objests/<world>/ — only the current world, downscaled.
+    for (const world of ['nature','graveyard','winter','desert']) OBJ_IMGS[world] = OBJ_IMGS[world] || {};
     return jobs;
   }
 
